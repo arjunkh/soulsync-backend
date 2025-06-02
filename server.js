@@ -3,9 +3,15 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+}));
 app.use(express.json());
-
+// Handle preflight requests
+app.options('*', cors());
 // In-memory storage for user profiles (use database in production)
 const userProfiles = {};
 
