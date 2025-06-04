@@ -1,8 +1,10 @@
-// Intelligent Aria Backend - Adaptive AI with Emotional Intelligence
+// Intelligent Aria Backend with PostgreSQL Memory System
 const express = require('express');
 const cors = require('cors');
+const { Pool } = require('pg');
 const app = express();
 
+// CORS configuration
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -10,10 +12,51 @@ app.use(cors({
   credentials: false
 }));
 app.use(express.json());
+
 // Handle preflight requests
 app.options('*', cors());
-// In-memory storage for user profiles (use database in production)
-const userProfiles = {};
+
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// Initialize database tables
+async function initializeDatabase() {
+  try {
+    // Users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        personality_data JSONB DEFAULT '{}',
+        relationship_context JSONB DEFAULT '{}'
+      )
+    `);
+
+    // Conversations table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) REFERENCES users(user_id),
+        conversation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        messages JSONB NOT NULL,
+        insights_discovered JSONB DEFAULT '{}',
+        session_summary TEXT
+      )
+    `);
+
+    console.log('✅ Database tables initialized successfully');
+  } catch (error) {
+    console.error('❌ Database initialization error:', error);
+  }
+}
+
+// Initialize database on startup
+initializeDatabase();
 
 // Aria's adaptive personality system
 class AriaPersonality {
@@ -35,7 +78,10 @@ class AriaPersonality {
       interests: this.extractInterests(message),
       communication_style: this.detectCommunicationStyle(message),
       emotional_needs: this.detectEmotionalNeeds(message),
-      topics: this.extractTopics(message)
+      topics: this.extractTopics(message),
+      love_language_hints: this.detectLoveLanguageHints(message),
+      attachment_hints: this.detectAttachmentHints(message),
+      family_values_hints: this.detectFamilyValueHints(message)
     };
 
     return analysis;
@@ -142,7 +188,6 @@ class AriaPersonality {
   }
 
   extractTopics(message) {
-    // Extract specific topics mentioned
     const topics = [];
     const msg = message.toLowerCase();
     
@@ -154,8 +199,68 @@ class AriaPersonality {
     return topics;
   }
 
-  // Generate adaptive system prompt based on user analysis
-  generateSystemPrompt(userAnalysis, conversationHistory) {
+  // New: Love language detection
+  detectLoveLanguageHints(message) {
+    const msg = message.toLowerCase();
+    const hints = [];
+    
+    if (msg.includes('time') || msg.includes('together') || msg.includes('presence')) {
+      hints.push('quality_time');
+    }
+    if (msg.includes('touch') || msg.includes('hug') || msg.includes('hold')) {
+      hints.push('physical_touch');
+    }
+    if (msg.includes('help') || msg.includes('do') || msg.includes('support')) {
+      hints.push('acts_of_service');
+    }
+    if (msg.includes('words') || msg.includes('tell') || msg.includes('appreciate')) {
+      hints.push('words_of_affirmation');
+    }
+    if (msg.includes('gift') || msg.includes('surprise') || msg.includes('thoughtful')) {
+      hints.push('gifts');
+    }
+    
+    return hints;
+  }
+
+  // New: Attachment style hints
+  detectAttachmentHints(message) {
+    const msg = message.toLowerCase();
+    const hints = [];
+    
+    if (msg.includes('space') || msg.includes('independent') || msg.includes('alone time')) {
+      hints.push('avoidant_tendency');
+    }
+    if (msg.includes('close') || msg.includes('together') || msg.includes('connection')) {
+      hints.push('secure_tendency');
+    }
+    if (msg.includes('worry') || msg.includes('anxious') || msg.includes('need reassurance')) {
+      hints.push('anxious_tendency');
+    }
+    
+    return hints;
+  }
+
+  // New: Family values detection
+  detectFamilyValueHints(message) {
+    const msg = message.toLowerCase();
+    const hints = [];
+    
+    if (msg.includes('kids') || msg.includes('children') || msg.includes('family')) {
+      hints.push('family_oriented');
+    }
+    if (msg.includes('career') || msg.includes('goals') || msg.includes('ambitious')) {
+      hints.push('career_focused');
+    }
+    if (msg.includes('parents') || msg.includes('close to family')) {
+      hints.push('family_connected');
+    }
+    
+    return hints;
+  }
+
+  // Generate adaptive system prompt based on user analysis and history
+  generateSystemPrompt(userAnalysis, userProfile, conversationHistory) {
     const { mood, energy, interests, communication_style, emotional_needs } = userAnalysis;
     
     let prompt = `You are Aria, an emotionally intelligent AI companion for relationship coaching and matchmaking.
@@ -166,6 +271,16 @@ CURRENT USER STATE:
 - Communication Style: ${communication_style}
 - Current Interests: ${interests.join(', ') || 'discovering'}
 - Emotional Needs: ${emotional_needs.join(', ') || 'connection'}
+
+USER PROFILE (from previous conversations):
+- Known Interests: ${userProfile.interests ? userProfile.interests.join(', ') : 'still learning'}
+- Communication Patterns: ${userProfile.communication_patterns ? JSON.stringify(userProfile.communication_patterns) : 'observing'}
+- Emotional Patterns: ${userProfile.emotional_patterns ? JSON.stringify(userProfile.emotional_patterns) : 'learning'}
+- Relationship Context: ${userProfile.relationship_context ? userProfile.relationship_context.current_depth || 'building' : 'new'}
+
+CONVERSATION HISTORY CONTEXT:
+${conversationHistory.length > 0 ? 'Previous conversations: ' + conversationHistory.length + ' sessions' : 'First conversation'}
+${conversationHistory.length > 0 ? 'Last conversation summary: ' + (conversationHistory[conversationHistory.length - 1]?.session_summary || 'Getting to know each other') : ''}
 
 PERSONALITY ADAPTATION:
 `;
@@ -203,6 +318,13 @@ PERSONALITY ADAPTATION:
 - Ask follow-up questions about their food preferences`;
     }
 
+    // Reference previous conversations if they exist
+    if (conversationHistory.length > 0) {
+      prompt += `\n- Reference previous conversations naturally
+- Build on topics you've discussed before
+- Show that you remember and care about their updates`;
+    }
+
     prompt += `
 
 CONVERSATION GOALS:
@@ -211,7 +333,7 @@ CONVERSATION GOALS:
 - Build emotional connection and trust
 - Learn about: love language, emotional processing, relationship vision, family values, lifestyle preferences
 
-KEY INSIGHTS TO DISCOVER NATURALLY:
+KEY INSIGHTS TO DISCOVER NATURALLY (don't force, let conversation flow):
 - How they feel most loved (love language)
 - How they handle emotions and stress
 - Their ideal relationship dynamic
@@ -233,7 +355,83 @@ Remember: You're not just collecting data - you're building a genuine connection
   }
 }
 
-// Main chat endpoint with adaptive intelligence
+// Database helper functions
+async function getOrCreateUser(userId) {
+  try {
+    // Try to get existing user
+    let result = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+    
+    if (result.rows.length === 0) {
+      // Create new user
+      result = await pool.query(
+        'INSERT INTO users (user_id, personality_data, relationship_context) VALUES ($1, $2, $3) RETURNING *',
+        [userId, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted' }]
+      );
+    } else {
+      // Update last_seen for existing user
+      await pool.query('UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE user_id = $1', [userId]);
+    }
+    
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error getting/creating user:', error);
+    throw error;
+  }
+}
+
+async function getUserConversationHistory(userId, limit = 5) {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM conversations WHERE user_id = $1 ORDER BY conversation_date DESC LIMIT $2',
+      [userId, limit]
+    );
+    return result.rows.reverse(); // Return in chronological order
+  } catch (error) {
+    console.error('Error getting conversation history:', error);
+    return [];
+  }
+}
+
+async function saveConversation(userId, messages, insights, summary) {
+  try {
+    await pool.query(
+      'INSERT INTO conversations (user_id, messages, insights_discovered, session_summary) VALUES ($1, $2, $3, $4)',
+      [userId, JSON.stringify(messages), insights, summary]
+    );
+  } catch (error) {
+    console.error('Error saving conversation:', error);
+  }
+}
+
+async function updateUserProfile(userId, newInsights) {
+  try {
+    const user = await pool.query('SELECT personality_data FROM users WHERE user_id = $1', [userId]);
+    const currentData = user.rows[0]?.personality_data || {};
+    
+    // Merge new insights with existing data
+    const updatedData = {
+      ...currentData,
+      interests: [...new Set([...(currentData.interests || []), ...(newInsights.interests || [])])],
+      communication_patterns: { ...currentData.communication_patterns, ...newInsights.communication_patterns },
+      emotional_patterns: { ...currentData.emotional_patterns, ...newInsights.emotional_patterns },
+      love_language_hints: [...new Set([...(currentData.love_language_hints || []), ...(newInsights.love_language_hints || [])])],
+      attachment_hints: [...new Set([...(currentData.attachment_hints || []), ...(newInsights.attachment_hints || [])])],
+      family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])]
+    };
+    
+    await pool.query(
+      'UPDATE users SET personality_data = $1 WHERE user_id = $2',
+      [JSON.stringify(updatedData), userId]
+    );
+    
+    return updatedData;
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
+}
+
+// Main chat endpoint with memory integration
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, apiKey, userId = 'default' } = req.body;
@@ -242,34 +440,34 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'API key required' });
     }
 
-    // Initialize user profile if doesn't exist
-    if (!userProfiles[userId]) {
-      userProfiles[userId] = {
-        conversation_history: [],
-        personality_insights: {},
-        interests: [],
-        communication_patterns: {},
-        emotional_patterns: {}
-      };
-    }
-
-    const userProfile = userProfiles[userId];
+    // Get or create user profile
+    const user = await getOrCreateUser(userId);
+    const conversationHistory = await getUserConversationHistory(userId);
+    
     const aria = new AriaPersonality();
     
     // Get the latest user message
     const latestUserMessage = messages[messages.length - 1];
     if (latestUserMessage && latestUserMessage.role === 'user') {
       // Analyze the user's message
-      const analysis = aria.analyzeMessage(latestUserMessage.content, userProfile.conversation_history);
+      const analysis = aria.analyzeMessage(latestUserMessage.content, conversationHistory);
       
       // Update user profile with new insights
-      userProfile.interests = [...new Set([...userProfile.interests, ...analysis.interests])];
-      userProfile.emotional_patterns.latest_mood = analysis.mood;
-      userProfile.emotional_patterns.latest_energy = analysis.energy;
-      userProfile.communication_patterns.style = analysis.communication_style;
+      const updatedProfile = await updateUserProfile(userId, {
+        interests: analysis.interests,
+        communication_patterns: { style: analysis.communication_style },
+        emotional_patterns: { 
+          latest_mood: analysis.mood, 
+          latest_energy: analysis.energy,
+          emotional_needs: analysis.emotional_needs
+        },
+        love_language_hints: analysis.love_language_hints,
+        attachment_hints: analysis.attachment_hints,
+        family_values_hints: analysis.family_values_hints
+      });
       
-      // Generate adaptive system prompt
-      const adaptivePrompt = aria.generateSystemPrompt(analysis, userProfile.conversation_history);
+      // Generate adaptive system prompt with memory context
+      const adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory);
       
       // Prepare messages with adaptive system prompt
       const adaptiveMessages = [
@@ -303,13 +501,13 @@ app.post('/api/chat', async (req, res) => {
 
       const data = await response.json();
       
-      // Store conversation in user profile
-      userProfile.conversation_history.push({
-        user: latestUserMessage.content,
-        aria: data.choices[0].message.content,
-        timestamp: new Date(),
-        analysis: analysis
-      });
+      // Save this conversation exchange
+      await saveConversation(
+        userId, 
+        [latestUserMessage, { role: 'assistant', content: data.choices[0].message.content }],
+        analysis,
+        `Discussed: ${analysis.topics.join(', ') || 'general conversation'}`
+      );
 
       // Return response with user insights
       res.json({
@@ -317,9 +515,11 @@ app.post('/api/chat', async (req, res) => {
         userInsights: {
           detectedMood: analysis.mood,
           detectedEnergy: analysis.energy,
-          currentInterests: userProfile.interests,
+          currentInterests: updatedProfile.interests || [],
           communicationStyle: analysis.communication_style,
-          emotionalNeeds: analysis.emotional_needs
+          emotionalNeeds: analysis.emotional_needs,
+          conversationCount: conversationHistory.length + 1,
+          isReturningUser: conversationHistory.length > 0
         }
       });
 
@@ -357,35 +557,64 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // Get user insights endpoint
-app.get('/api/user-insights/:userId', (req, res) => {
-  const { userId } = req.params;
-  const userProfile = userProfiles[userId] || {};
-  
-  res.json({
-    interests: userProfile.interests || [],
-    emotionalPatterns: userProfile.emotional_patterns || {},
-    communicationStyle: userProfile.communication_patterns || {},
-    conversationCount: userProfile.conversation_history?.length || 0,
-    lastSeen: userProfile.conversation_history?.slice(-1)[0]?.timestamp || null
-  });
+app.get('/api/user-insights/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+    const conversations = await getUserConversationHistory(userId, 10);
+    
+    if (user.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = user.rows[0];
+    
+    res.json({
+      userId: userData.user_id,
+      createdAt: userData.created_at,
+      lastSeen: userData.last_seen,
+      personalityData: userData.personality_data,
+      relationshipContext: userData.relationship_context,
+      conversationCount: conversations.length,
+      recentTopics: conversations.slice(-3).map(conv => conv.session_summary),
+      profileCompleteness: calculateProfileCompleteness(userData.personality_data)
+    });
+  } catch (error) {
+    console.error('Error getting user insights:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
+
+function calculateProfileCompleteness(personalityData) {
+  const requiredFields = ['interests', 'love_language_hints', 'attachment_hints', 'family_values_hints'];
+  const completedFields = requiredFields.filter(field => 
+    personalityData[field] && personalityData[field].length > 0
+  );
+  return Math.round((completedFields.length / requiredFields.length) * 100);
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ 
-    status: 'Intelligent Aria backend running!',
+    status: 'Intelligent Aria backend with Memory running!',
     features: [
+      'PostgreSQL Memory System',
+      'Cross-session Continuity',
       'Adaptive personality system',
       'Real-time mood detection',
       'Interest tracking',
-      'Emotional intelligence',
-      'Dynamic conversation learning'
-    ]
+      'Love language detection',
+      'Attachment style hints',
+      'Family values analysis',
+      'Progressive relationship building'
+    ],
+    database_connected: pool ? true : false
   });
 });
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🧠 Intelligent Aria Backend running on port ${PORT}`);
-  console.log('Features: Adaptive AI, Mood Detection, Interest Learning');
+  console.log(`🧠 Intelligent Aria Backend with Memory running on port ${PORT}`);
+  console.log('Features: PostgreSQL Memory, Cross-session Continuity, Advanced Profiling');
 });
