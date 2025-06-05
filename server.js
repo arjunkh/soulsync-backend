@@ -430,7 +430,41 @@ async function updateUserProfile(userId, newInsights) {
     throw error;
   }
 }
+// ADD THIS SINGLE ENDPOINT RIGHT BEFORE YOUR EXISTING app.post('/api/chat', ...)
 
+// Simple phone verification test endpoint
+app.post('/api/verify-phone', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+    
+    // For now, just allow any phone number (we'll add restrictions later)
+    const userId = 'user_' + phoneNumber.replace(/\D/g, '');
+    
+    res.json({
+      success: true,
+      message: 'Phone verified! 🎉',
+      user: {
+        id: userId,
+        phone: phoneNumber,
+        isNewUser: true
+      }
+    });
+    
+  } catch (error) {
+    console.error('Phone verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Verification failed. Please try again.' 
+    });
+  }
+});
 // Main chat endpoint with memory integration
 app.post('/api/chat', async (req, res) => {
   try {
