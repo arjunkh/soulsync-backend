@@ -468,7 +468,8 @@ app.post('/api/verify-phone', async (req, res) => {
 // Main chat endpoint with memory integration
 app.post('/api/chat', async (req, res) => {
   try {
-    const { messages, apiKey, userId = 'default' } = req.body;
+   const { messages, userId = 'default' } = req.body;
+const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
       return res.status(400).json({ error: 'API key required' });
