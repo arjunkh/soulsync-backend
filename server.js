@@ -593,26 +593,89 @@ function calculateProfileCompleteness(personalityData) {
   );
   return Math.round((completedFields.length / requiredFields.length) * 100);
 }
+// Database connection test endpoint - ADD THIS BEFORE THE /api/health ENDPOINT
+app.get('/api/test-db', async (req, res) => {
+  try {
+    // Test basic connection
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW() as current_time');
+    client.release();
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'Intelligent Aria backend with Memory running!',
-    features: [
-      'PostgreSQL Memory System',
-      'Cross-session Continuity',
-      'Adaptive personality system',
-      'Real-time mood detection',
-      'Interest tracking',
-      'Love language detection',
-      'Attachment style hints',
-      'Family values analysis',
-      'Progressive relationship building'
-    ],
-    database_connected: pool ? true : false
-  });
+    // Test table existence
+    const tablesResult = await pool.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+    `);
+
+    // Test user creation and retrieval
+    const testUserId = 'test-user-' + Date.now();
+    await getOrCreateUser(testUserId);
+    const userCheck = await pool.query('SELECT * FROM users WHERE user_id = $1', [testUserId]);
+
+    // Get total user count
+    const userCountResult = await pool.query('SELECT COUNT(*) FROM users');
+
+    res.json({
+      status: 'Database connection successful! 🎉',
+      database_info: {
+        connected: true,
+        current_time: result.rows[0].current_time,
+        tables_created: tablesResult.rows.map(row => row.table_name),
+        test_user_created: userCheck.rows.length > 0,
+        total_users: userCountResult.rows[0].count
+      },
+      features: [
+        'User profiles with personality data',
+        'Conversation history tracking',
+        'Cross-session memory',
+        'Progressive relationship building',
+        'Mood and interest persistence'
+      ]
+    });
+  } catch (error) {
+    console.error('Database test error:', error);
+    res.status(500).json({ 
+      status: 'Database connection failed',
+      error: error.message,
+      suggestion: 'Make sure PostgreSQL is added to your Railway project and DATABASE_URL is set'
+    });
+  }
 });
-
+// Enhanced health check with database status - REPLACE YOUR EXISTING /api/health
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbTest = await pool.query('SELECT NOW()');
+    res.json({ 
+      status: 'Intelligent Aria backend with PostgreSQL Memory running!',
+      database_connected: true,
+      database_time: dbTest.rows[0].now,
+      features: [
+        'PostgreSQL Memory System',
+        'Cross-session Continuity',
+        'Adaptive personality system',
+        'Real-time mood detection',
+        'Interest tracking',
+        'Love language detection',
+        'Attachment style hints',
+        'Family values analysis',
+        'Progressive relationship building'
+      ]
+    });
+  } catch (error) {
+    res.json({ 
+      status: 'Backend running, database connection issue',
+      database_connected: false,
+      database_error: error.message,
+      features: [
+        'In-memory storage (fallback)',
+        'Basic conversation flow',
+        'Mood detection',
+        'Interest tracking'
+      ]
+    });
+  }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🧠 Intelligent Aria Backend with Memory running on port ${PORT}`);
