@@ -22,21 +22,64 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Initialize database tables
+// REPLACE YOUR ENTIRE initializeDatabase function with this:
 async function initializeDatabase() {
   try {
-    // Users table
+    // Enhanced users table with phone number
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         user_id VARCHAR(255) UNIQUE NOT NULL,
+        phone_number VARCHAR(20) UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         personality_data JSONB DEFAULT '{}',
-        relationship_context JSONB DEFAULT '{}'
+        relationship_context JSONB DEFAULT '{}',
+        total_conversations INTEGER DEFAULT 0,
+        profile_completeness INTEGER DEFAULT 0
       )
     `);
 
+    // Existing conversations table (same as before)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) REFERENCES users(user_id),
+        conversation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        messages JSONB NOT NULL,
+        insights_discovered JSONB DEFAULT '{}',
+        session_summary TEXT
+      )
+    `);
+
+    // NEW: Phone allowlist table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS phone_allowlist (
+        id SERIAL PRIMARY KEY,
+        phone_number VARCHAR(20) UNIQUE NOT NULL,
+        added_by VARCHAR(50) DEFAULT 'admin',
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active',
+        notes TEXT,
+        first_access TIMESTAMP,
+        last_access TIMESTAMP,
+        total_sessions INTEGER DEFAULT 0
+      )
+    `);
+
+    // Add your phone number (CHANGE THIS TO YOUR ACTUAL PHONE)
+    await pool.query(`
+      INSERT INTO phone_allowlist (phone_number, added_by, notes, status) 
+      VALUES 
+        ('+919873986469', 'system', 'App creator - primary admin', 'active')
+      ON CONFLICT (phone_number) DO NOTHING
+    `);
+
+    console.log('✅ Database tables initialized successfully with allowlist system');
+  } catch (error) {
+    console.error('❌ Database initialization error:', error);
+  }
+}
     // Conversations table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS conversations (
@@ -354,7 +397,90 @@ Remember: You're not just collecting data - you're building a genuine connection
     return prompt;
   }
 }
+// ADD THESE FUNCTIONS RIGHT BEFORE your existing "async function getOrCreateUser(userId)" line:
 
+// Phone number validation helper
+function normalizePhoneNumber(phone) {
+  const cleaned = phone.replace(/\D/g, '');
+  
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return '+' + cleaned;
+  }
+  
+  if (cleaned.length === 10) {
+    return '+91' + cleaned;
+  }
+  
+  if (cleaned.length > 10) {
+    return '+' + cleaned;
+  }
+  
+  return cleaned;
+}
+
+// Check if phone number is allowed
+async function isPhoneAllowed(phoneNumber) {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const result = await pool.query(
+      'SELECT * FROM phone_allowlist WHERE phone_number = $1 AND status = $2',
+      [normalizedPhone, 'active']
+    );
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('Error checking phone allowlist:', error);
+    return false;
+  }
+}
+
+// Track when someone uses the app
+async function trackAllowlistAccess(phoneNumber) {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    await pool.query(`
+      UPDATE phone_allowlist 
+      SET 
+        last_access = CURRENT_TIMESTAMP,
+        total_sessions = total_sessions + 1,
+        first_access = COALESCE(first_access, CURRENT_TIMESTAMP)
+      WHERE phone_number = $1
+    `, [normalizedPhone]);
+  } catch (error) {
+    console.error('Error tracking allowlist access:', error);
+  }
+}
+
+// Create user with phone number
+async function getOrCreateUserWithPhone(phoneNumber) {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    if (!await isPhoneAllowed(normalizedPhone)) {
+      throw new Error('Phone number not in allowlist');
+    }
+    
+    await trackAllowlistAccess(normalizedPhone);
+    
+    const userId = 'user_' + normalizedPhone.replace(/\D/g, '');
+    
+    let result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [normalizedPhone]);
+    
+    if (result.rows.length === 0) {
+      result = await pool.query(
+        `INSERT INTO users (user_id, phone_number, personality_data, relationship_context) 
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [userId, normalizedPhone, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted' }]
+      );
+    } else {
+      await pool.query('UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE phone_number = $1', [normalizedPhone]);
+    }
+    
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error getting/creating user with phone:', error);
+    throw error;
+  }
+}
 // Database helper functions
 async function getOrCreateUser(userId) {
   try {
@@ -430,7 +556,169 @@ async function updateUserProfile(userId, newInsights) {
     throw error;
   }
 }
+// ADD THESE ENDPOINTS RIGHT BEFORE your existing "app.post('/api/chat'..." line:
 
+// Phone number verification endpoint
+app.post('/api/verify-phone', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const isAllowed = await isPhoneAllowed(normalizedPhone);
+    
+    if (isAllowed) {
+      const user = await getOrCreateUserWithPhone(normalizedPhone);
+      
+      res.json({
+        success: true,
+        message: 'Welcome to SoulSync! 🎉',
+        user: {
+          id: user.user_id,
+          phone: user.phone_number,
+          isNewUser: user.total_conversations === 0,
+          profileCompleteness: user.profile_completeness || 0,
+          lastSeen: user.last_seen
+        }
+      });
+    } else {
+      res.status(403).json({
+        success: false,
+        message: 'Thanks for your interest! SoulSync is currently in private beta.',
+        waitlist: true
+      });
+    }
+  } catch (error) {
+    console.error('Phone verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Verification failed. Please try again.' 
+    });
+  }
+});
+
+// Admin: Add phone number
+app.post('/api/admin/add-phone', async (req, res) => {
+  try {
+    const { phoneNumber, notes = '', adminKey } = req.body;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const currentCount = parseInt(countResult.rows[0].count);
+    
+    if (currentCount >= 35) {
+      return res.status(400).json({ 
+        message: 'Allowlist is full (35/35). Remove a number first.' 
+      });
+    }
+    
+    await pool.query(
+      'INSERT INTO phone_allowlist (phone_number, notes, added_by) VALUES ($1, $2, $3) ON CONFLICT (phone_number) DO UPDATE SET status = $4, notes = $2',
+      [normalizedPhone, notes, 'admin', 'active']
+    );
+    
+    res.json({ 
+      success: true, 
+      message: `Phone ${normalizedPhone} added to allowlist`,
+      currentCount: currentCount + 1,
+      remaining: 34 - currentCount
+    });
+    
+  } catch (error) {
+    console.error('Add phone error:', error);
+    res.status(500).json({ message: 'Failed to add phone number' });
+  }
+});
+
+// Admin: Remove phone number
+app.post('/api/admin/remove-phone', async (req, res) => {
+  try {
+    const { phoneNumber, adminKey } = req.body;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    await pool.query(
+      'UPDATE phone_allowlist SET status = $1 WHERE phone_number = $2',
+      ['removed', normalizedPhone]
+    );
+    
+    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const currentCount = parseInt(countResult.rows[0].count);
+    
+    res.json({ 
+      success: true, 
+      message: `Phone ${normalizedPhone} removed from allowlist`,
+      currentCount: currentCount,
+      available: 35 - currentCount
+    });
+    
+  } catch (error) {
+    console.error('Remove phone error:', error);
+    res.status(500).json({ message: 'Failed to remove phone number' });
+  }
+});
+
+// Admin: View allowlist
+app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
+  try {
+    const { adminKey } = req.params;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    const allowlistResult = await pool.query(`
+      SELECT 
+        al.*,
+        u.total_conversations,
+        u.last_seen as user_last_seen,
+        u.profile_completeness
+      FROM phone_allowlist al
+      LEFT JOIN users u ON al.phone_number = u.phone_number
+      WHERE al.status = 'active'
+      ORDER BY al.added_at DESC
+    `);
+    
+    const totalCount = allowlistResult.rows.length;
+    const available = 35 - totalCount;
+    
+    res.json({
+      totalAllowed: totalCount,
+      maxCapacity: 35,
+      available: available,
+      allowlist: allowlistResult.rows.map(row => ({
+        phone: row.phone_number,
+        addedAt: row.added_at,
+        notes: row.notes,
+        firstAccess: row.first_access,
+        lastAccess: row.last_access,
+        totalSessions: row.total_sessions || 0,
+        userConversations: row.total_conversations || 0,
+        profileCompleteness: row.profile_completeness || 0,
+        status: row.user_last_seen ? 'Active User' : 'Not Started'
+      }))
+    });
+    
+  } catch (error) {
+    console.error('Allowlist status error:', error);
+    res.status(500).json({ message: 'Failed to get allowlist status' });
+  }
+});
 // Main chat endpoint with memory integration
 app.post('/api/chat', async (req, res) => {
   try {
