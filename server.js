@@ -1,4 +1,4 @@
-// Intelligent Aria Backend with PostgreSQL Memory System
+// Intelligent Aria Backend with PostgreSQL Memory System + Allowlist
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -22,22 +22,27 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Initialize database tables
+// Enhanced database initialization with allowlist system
 async function initializeDatabase() {
   try {
-    // Users table
+    // Enhanced Users table with complete profile info
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         user_id VARCHAR(255) UNIQUE NOT NULL,
+        phone_number VARCHAR(20) UNIQUE,
+        user_name VARCHAR(100),
+        user_gender VARCHAR(10),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         personality_data JSONB DEFAULT '{}',
-        relationship_context JSONB DEFAULT '{}'
+        relationship_context JSONB DEFAULT '{}',
+        total_conversations INTEGER DEFAULT 0,
+        profile_completeness INTEGER DEFAULT 0
       )
     `);
 
-    // Conversations table
+    // Conversations table (same as before)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS conversations (
         id SERIAL PRIMARY KEY,
@@ -49,7 +54,33 @@ async function initializeDatabase() {
       )
     `);
 
-    console.log('✅ Database tables initialized successfully');
+    // NEW: Phone allowlist table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS phone_allowlist (
+        id SERIAL PRIMARY KEY,
+        phone_number VARCHAR(20) UNIQUE NOT NULL,
+        user_name VARCHAR(100),
+        user_gender VARCHAR(10),
+        added_by VARCHAR(50) DEFAULT 'admin',
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active',
+        notes TEXT,
+        first_access TIMESTAMP,
+        last_access TIMESTAMP,
+        total_sessions INTEGER DEFAULT 0
+      )
+    `);
+
+    // Add initial admin numbers (REPLACE WITH YOUR ACTUAL PHONE NUMBERS)
+    await pool.query(`
+      INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status) 
+      VALUES 
+        ('+919876543210', 'Admin User', 'Male', 'system', 'App creator - primary admin', 'active'),
+        ('+911234567890', 'Test User', 'Female', 'system', 'Test number for development', 'active')
+      ON CONFLICT (phone_number) DO NOTHING
+    `);
+
+    console.log('✅ Database tables initialized successfully with complete allowlist system');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
   }
@@ -58,7 +89,310 @@ async function initializeDatabase() {
 // Initialize database on startup
 initializeDatabase();
 
-// Aria's adaptive personality system
+// Phone number validation and normalization helper
+function normalizePhoneNumber(phone) {
+  // Remove all non-digits and add country code if needed
+  const cleaned = phone.replace(/\D/g, '');
+  
+  // If starts with 91 (India) and has 12 digits total, add +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return '+' + cleaned;
+  }
+  
+  // If 10 digits, assume Indian number and add +91
+  if (cleaned.length === 10) {
+    return '+91' + cleaned;
+  }
+  
+  // If already has country code format
+  if (cleaned.length > 10) {
+    return '+' + cleaned;
+  }
+  
+  return '+91' + cleaned; // Default to Indian format
+}
+
+// Check if phone number is in allowlist
+async function isPhoneAllowed(phoneNumber) {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const result = await pool.query(
+      'SELECT * FROM phone_allowlist WHERE phone_number = $1 AND status = $2',
+      [normalizedPhone, 'active']
+    );
+    return result.rows.length > 0 ? result.rows[0] : false;
+  } catch (error) {
+    console.error('Error checking phone allowlist:', error);
+    return false;
+  }
+}
+
+// Track allowlist access
+async function trackAllowlistAccess(phoneNumber) {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    await pool.query(`
+      UPDATE phone_allowlist 
+      SET 
+        last_access = CURRENT_TIMESTAMP,
+        total_sessions = total_sessions + 1,
+        first_access = COALESCE(first_access, CURRENT_TIMESTAMP)
+      WHERE phone_number = $1
+    `, [normalizedPhone]);
+  } catch (error) {
+    console.error('Error tracking allowlist access:', error);
+  }
+}
+
+// Enhanced user creation with complete profile
+async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    // Check if phone is allowed
+    const allowlistEntry = await isPhoneAllowed(normalizedPhone);
+    if (!allowlistEntry) {
+      throw new Error('Phone number not in allowlist');
+    }
+    
+    // Track access
+    await trackAllowlistAccess(normalizedPhone);
+    
+    // Create user ID from phone (remove + and special chars)
+    const userId = 'user_' + normalizedPhone.replace(/\D/g, '');
+    
+    // Try to get existing user
+    let result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [normalizedPhone]);
+    
+    if (result.rows.length === 0) {
+      // Create new user with complete profile
+      result = await pool.query(
+        `INSERT INTO users (user_id, phone_number, user_name, user_gender, personality_data, relationship_context, total_conversations) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [
+          userId, 
+          normalizedPhone, 
+          userName, 
+          userGender,
+          { name: userName, gender: userGender }, 
+          { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted' },
+          0
+        ]
+      );
+    } else {
+      // Update existing user with any new info and last_seen
+      await pool.query(`
+        UPDATE users 
+        SET 
+          last_seen = CURRENT_TIMESTAMP,
+          user_name = COALESCE($2, user_name),
+          user_gender = COALESCE($3, user_gender)
+        WHERE phone_number = $1`,
+        [normalizedPhone, userName, userGender]
+      );
+      result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [normalizedPhone]);
+    }
+    
+    return result.rows[0];
+  } catch (error) {
+    console.error('Error getting/creating user with phone:', error);
+    throw error;
+  }
+}
+
+// Enhanced phone verification endpoint
+app.post('/api/verify-phone', async (req, res) => {
+  try {
+    const { phoneNumber, userName, userGender } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+
+    if (!userName) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Name is required' 
+      });
+    }
+
+    if (!userGender) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Gender is required' 
+      });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    const allowlistEntry = await isPhoneAllowed(normalizedPhone);
+    
+    if (allowlistEntry) {
+      // Create or get user with complete profile
+      const user = await getOrCreateUserWithPhone(normalizedPhone, userName.trim(), userGender);
+      
+      res.json({
+        success: true,
+        message: `Welcome to SoulSync, ${userName}! 🎉`,
+        user: {
+          id: user.user_id,
+          name: userName.trim(),
+          gender: userGender,
+          phone: user.phone_number,
+          isNewUser: user.total_conversations === 0,
+          profileCompleteness: user.profile_completeness || 0,
+          lastSeen: user.last_seen
+        }
+      });
+    } else {
+      res.status(403).json({
+        success: false,
+        message: `Thanks for your interest, ${userName}! SoulSync is currently in private beta. We'll notify you when it's available.`,
+        waitlist: true
+      });
+    }
+  } catch (error) {
+    console.error('Phone verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Verification failed. Please try again.' 
+    });
+  }
+});
+
+// Admin: Add phone number to allowlist
+app.post('/api/admin/add-phone', async (req, res) => {
+  try {
+    const { phoneNumber, userName = '', userGender = '', notes = '', adminKey } = req.body;
+    
+    // Simple admin protection (you can change this key)
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    // Check current allowlist count
+    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const currentCount = parseInt(countResult.rows[0].count);
+    
+    if (currentCount >= 35) {
+      return res.status(400).json({ 
+        message: 'Allowlist is full (35/35). Remove a number first.' 
+      });
+    }
+    
+    // Add to allowlist
+    await pool.query(
+      `INSERT INTO phone_allowlist (phone_number, user_name, user_gender, notes, added_by) 
+       VALUES ($1, $2, $3, $4, $5) 
+       ON CONFLICT (phone_number) DO UPDATE SET 
+         status = 'active', 
+         user_name = $2, 
+         user_gender = $3, 
+         notes = $4`,
+      [normalizedPhone, userName, userGender, notes, 'admin']
+    );
+    
+    res.json({ 
+      success: true, 
+      message: `Phone ${normalizedPhone} (${userName}) added to allowlist`,
+      currentCount: currentCount + 1,
+      remaining: 34 - currentCount
+    });
+    
+  } catch (error) {
+    console.error('Add phone error:', error);
+    res.status(500).json({ message: 'Failed to add phone number' });
+  }
+});
+
+// Admin: Remove phone number from allowlist
+app.post('/api/admin/remove-phone', async (req, res) => {
+  try {
+    const { phoneNumber, adminKey } = req.body;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    await pool.query(
+      'UPDATE phone_allowlist SET status = $1 WHERE phone_number = $2',
+      ['removed', normalizedPhone]
+    );
+    
+    // Get updated count
+    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const currentCount = parseInt(countResult.rows[0].count);
+    
+    res.json({ 
+      success: true, 
+      message: `Phone ${normalizedPhone} removed from allowlist`,
+      currentCount: currentCount,
+      available: 35 - currentCount
+    });
+    
+  } catch (error) {
+    console.error('Remove phone error:', error);
+    res.status(500).json({ message: 'Failed to remove phone number' });
+  }
+});
+
+// Admin: View allowlist status
+app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
+  try {
+    const { adminKey } = req.params;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    // Get allowlist with usage stats
+    const allowlistResult = await pool.query(`
+      SELECT 
+        al.*,
+        u.total_conversations,
+        u.last_seen as user_last_seen,
+        u.profile_completeness
+      FROM phone_allowlist al
+      LEFT JOIN users u ON al.phone_number = u.phone_number
+      WHERE al.status = 'active'
+      ORDER BY al.added_at DESC
+    `);
+    
+    const totalCount = allowlistResult.rows.length;
+    const available = 35 - totalCount;
+    
+    res.json({
+      totalAllowed: totalCount,
+      maxCapacity: 35,
+      available: available,
+      allowlist: allowlistResult.rows.map(row => ({
+        phone: row.phone_number,
+        name: row.user_name || 'Unknown',
+        gender: row.user_gender || 'Unknown',
+        addedAt: row.added_at,
+        notes: row.notes,
+        firstAccess: row.first_access,
+        lastAccess: row.last_access,
+        totalSessions: row.total_sessions || 0,
+        userConversations: row.total_conversations || 0,
+        profileCompleteness: row.profile_completeness || 0,
+        status: row.user_last_seen ? 'Active User' : 'Not Started'
+      }))
+    });
+    
+  } catch (error) {
+    console.error('Allowlist status error:', error);
+    res.status(500).json({ message: 'Failed to get allowlist status' });
+  }
+});
+
+// Aria's adaptive personality system (same as before)
 class AriaPersonality {
   constructor() {
     this.basePersonality = {
@@ -199,7 +533,7 @@ class AriaPersonality {
     return topics;
   }
 
-  // New: Love language detection
+  // Love language detection
   detectLoveLanguageHints(message) {
     const msg = message.toLowerCase();
     const hints = [];
@@ -223,7 +557,7 @@ class AriaPersonality {
     return hints;
   }
 
-  // New: Attachment style hints
+  // Attachment style hints
   detectAttachmentHints(message) {
     const msg = message.toLowerCase();
     const hints = [];
@@ -241,7 +575,7 @@ class AriaPersonality {
     return hints;
   }
 
-  // New: Family values detection
+  // Family values detection
   detectFamilyValueHints(message) {
     const msg = message.toLowerCase();
     const hints = [];
@@ -259,11 +593,16 @@ class AriaPersonality {
     return hints;
   }
 
-  // Generate adaptive system prompt based on user analysis and history
-  generateSystemPrompt(userAnalysis, userProfile, conversationHistory) {
+  // Generate adaptive system prompt with user profile context
+  generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user) {
     const { mood, energy, interests, communication_style, emotional_needs } = userAnalysis;
     
     let prompt = `You are Aria, an emotionally intelligent AI companion for relationship coaching and matchmaking.
+
+USER PROFILE:
+- Name: ${user?.user_name || 'Friend'}
+- Gender: ${user?.user_gender || 'Unknown'}
+- Conversation History: ${user?.total_conversations || 0} previous chats
 
 CURRENT USER STATE:
 - Mood: ${mood}
@@ -311,13 +650,6 @@ PERSONALITY ADAPTATION:
 - Don't overwhelm with too much energy`;
     }
 
-    // Adapt to their interests
-    if (interests.includes('food_cooking')) {
-      prompt += `\n- Show genuine interest in food and cooking
-- Share your own "experiences" with cooking
-- Ask follow-up questions about their food preferences`;
-    }
-
     // Reference previous conversations if they exist
     if (conversationHistory.length > 0) {
       prompt += `\n- Reference previous conversations naturally
@@ -328,7 +660,7 @@ PERSONALITY ADAPTATION:
     prompt += `
 
 CONVERSATION GOALS:
-- Have a genuine, human-like conversation
+- Have a genuine, human-like conversation with ${user?.user_name || 'them'}
 - Naturally discover insights about their personality for matchmaking
 - Build emotional connection and trust
 - Learn about: love language, emotional processing, relationship vision, family values, lifestyle preferences
@@ -348,6 +680,7 @@ RESPONSE STYLE:
 - Mirror their communication style and energy
 - Be vulnerable and authentic
 - Use modern, casual language
+- Use their name (${user?.user_name || 'friend'}) naturally in conversation
 
 Remember: You're not just collecting data - you're building a genuine connection while learning who they are.`;
 
@@ -355,7 +688,7 @@ Remember: You're not just collecting data - you're building a genuine connection
   }
 }
 
-// Database helper functions
+// Enhanced database helper functions
 async function getOrCreateUser(userId) {
   try {
     // Try to get existing user
@@ -398,6 +731,12 @@ async function saveConversation(userId, messages, insights, summary) {
       'INSERT INTO conversations (user_id, messages, insights_discovered, session_summary) VALUES ($1, $2, $3, $4)',
       [userId, JSON.stringify(messages), insights, summary]
     );
+    
+    // Update conversation count
+    await pool.query(
+      'UPDATE users SET total_conversations = total_conversations + 1 WHERE user_id = $1',
+      [userId]
+    );
   } catch (error) {
     console.error('Error saving conversation:', error);
   }
@@ -430,49 +769,15 @@ async function updateUserProfile(userId, newInsights) {
     throw error;
   }
 }
-// ADD THIS SINGLE ENDPOINT RIGHT BEFORE YOUR EXISTING app.post('/api/chat', ...)
 
-// Simple phone verification test endpoint
-app.post('/api/verify-phone', async (req, res) => {
-  try {
-    const { phoneNumber } = req.body;
-    
-    if (!phoneNumber) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Phone number is required' 
-      });
-    }
-    
-    // For now, just allow any phone number (we'll add restrictions later)
-    const userId = 'user_' + phoneNumber.replace(/\D/g, '');
-    
-    res.json({
-      success: true,
-      message: 'Phone verified! 🎉',
-      user: {
-        id: userId,
-        phone: phoneNumber,
-        isNewUser: true
-      }
-    });
-    
-  } catch (error) {
-    console.error('Phone verification error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Verification failed. Please try again.' 
-    });
-  }
-});
-// Main chat endpoint with memory integration
+// Enhanced main chat endpoint with memory integration
 app.post('/api/chat', async (req, res) => {
   try {
-   const { messages, userId = 'default' } = req.body;
-const apiKey = process.env.OPENAI_API_KEY;
+    const { messages, userId = 'default' } = req.body;
+    const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      return res.status(400).json({ error: 'API key required' });
+      return res.status(500).json({ error: 'OpenAI API key not configured on server' });
     }
 
     // Get or create user profile
@@ -501,8 +806,8 @@ const apiKey = process.env.OPENAI_API_KEY;
         family_values_hints: analysis.family_values_hints
       });
       
-      // Generate adaptive system prompt with memory context
-      const adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory);
+      // Generate adaptive system prompt with complete user context
+      const adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
       
       // Prepare messages with adaptive system prompt
       const adaptiveMessages = [
@@ -554,7 +859,9 @@ const apiKey = process.env.OPENAI_API_KEY;
           communicationStyle: analysis.communication_style,
           emotionalNeeds: analysis.emotional_needs,
           conversationCount: conversationHistory.length + 1,
-          isReturningUser: conversationHistory.length > 0
+          isReturningUser: conversationHistory.length > 0,
+          userName: user.user_name,
+          userGender: user.user_gender
         }
       });
 
@@ -607,11 +914,15 @@ app.get('/api/user-insights/:userId', async (req, res) => {
     
     res.json({
       userId: userData.user_id,
+      userName: userData.user_name,
+      userGender: userData.user_gender,
+      phoneNumber: userData.phone_number,
       createdAt: userData.created_at,
       lastSeen: userData.last_seen,
       personalityData: userData.personality_data,
       relationshipContext: userData.relationship_context,
       conversationCount: conversations.length,
+      totalConversations: userData.total_conversations,
       recentTopics: conversations.slice(-3).map(conv => conv.session_summary),
       profileCompleteness: calculateProfileCompleteness(userData.personality_data)
     });
@@ -628,7 +939,8 @@ function calculateProfileCompleteness(personalityData) {
   );
   return Math.round((completedFields.length / requiredFields.length) * 100);
 }
-// Database connection test endpoint - ADD THIS BEFORE THE /api/health ENDPOINT
+
+// Database connection test endpoint
 app.get('/api/test-db', async (req, res) => {
   try {
     // Test basic connection
@@ -643,13 +955,9 @@ app.get('/api/test-db', async (req, res) => {
       WHERE table_schema = 'public'
     `);
 
-    // Test user creation and retrieval
-    const testUserId = 'test-user-' + Date.now();
-    await getOrCreateUser(testUserId);
-    const userCheck = await pool.query('SELECT * FROM users WHERE user_id = $1', [testUserId]);
-
-    // Get total user count
-    const userCountResult = await pool.query('SELECT COUNT(*) FROM users');
+    // Test allowlist system
+    const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const userCount = await pool.query('SELECT COUNT(*) FROM users');
 
     res.json({
       status: 'Database connection successful! 🎉',
@@ -657,15 +965,17 @@ app.get('/api/test-db', async (req, res) => {
         connected: true,
         current_time: result.rows[0].current_time,
         tables_created: tablesResult.rows.map(row => row.table_name),
-        test_user_created: userCheck.rows.length > 0,
-        total_users: userCountResult.rows[0].count
+        allowlist_users: allowlistCount.rows[0].count,
+        total_users: userCount.rows[0].count,
+        allowlist_capacity: '35 users max'
       },
       features: [
-        'User profiles with personality data',
-        'Conversation history tracking',
-        'Cross-session memory',
+        'Complete user profiles (name, gender, phone)',
+        'Phone number allowlist system (35 users max)',
+        'Cross-session memory with user identification',
         'Progressive relationship building',
-        'Mood and interest persistence'
+        'Mood and interest persistence',
+        'Admin management endpoints'
       ]
     });
   } catch (error) {
@@ -677,16 +987,23 @@ app.get('/api/test-db', async (req, res) => {
     });
   }
 });
-// Enhanced health check with database status - REPLACE YOUR EXISTING /api/health
+
+// Enhanced health check with allowlist status
 app.get('/api/health', async (req, res) => {
   try {
     const dbTest = await pool.query('SELECT NOW()');
+    const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    
     res.json({ 
-      status: 'Intelligent Aria backend with PostgreSQL Memory running!',
+      status: 'SoulSync AI Backend with Complete Allowlist System running!',
       database_connected: true,
       database_time: dbTest.rows[0].now,
+      allowlist_users: allowlistCount.rows[0].count,
+      allowlist_capacity: '35 users max',
       features: [
         'PostgreSQL Memory System',
+        'Phone Number Allowlist (35 users)',
+        'Complete User Profiles (name, gender, phone)',
         'Cross-session Continuity',
         'Adaptive personality system',
         'Real-time mood detection',
@@ -694,7 +1011,8 @@ app.get('/api/health', async (req, res) => {
         'Love language detection',
         'Attachment style hints',
         'Family values analysis',
-        'Progressive relationship building'
+        'Progressive relationship building',
+        'Admin management system'
       ]
     });
   } catch (error) {
@@ -711,8 +1029,9 @@ app.get('/api/health', async (req, res) => {
     });
   }
 });
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🧠 Intelligent Aria Backend with Memory running on port ${PORT}`);
-  console.log('Features: PostgreSQL Memory, Cross-session Continuity, Advanced Profiling');
+  console.log(`🧠 SoulSync AI Backend with Complete Allowlist System running on port ${PORT}`);
+  console.log('Features: Phone Allowlist, Complete Profiles, PostgreSQL Memory, Cross-session Continuity');
 });
