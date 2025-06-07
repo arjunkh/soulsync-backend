@@ -993,6 +993,74 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+// ADMIN: Fix database schema (add missing columns)
+app.post('/api/admin/fix-schema/:adminKey', async (req, res) => {
+  try {
+    const { adminKey } = req.params;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    console.log('🔧 Fixing database schema...');
+    
+    // Add missing columns to users table
+    const alterCommands = [
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20) UNIQUE',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_name VARCHAR(100)',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_gender VARCHAR(10)',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS total_conversations INTEGER DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_completeness INTEGER DEFAULT 0'
+    ];
+    
+    const results = [];
+    
+    for (const command of alterCommands) {
+      try {
+        await pool.query(command);
+        results.push(`✅ ${command}`);
+        console.log(`✅ ${command}`);
+      } catch (error) {
+        if (error.message.includes('already exists')) {
+          results.push(`⚠️ ${command} - Column already exists`);
+          console.log(`⚠️ ${command} - Column already exists`);
+        } else {
+          results.push(`❌ ${command} - Error: ${error.message}`);
+          console.log(`❌ ${command} - Error: ${error.message}`);
+        }
+      }
+    }
+    
+    // Update existing user with phone number if exists
+    try {
+      await pool.query(`
+        UPDATE users 
+        SET phone_number = '+919873986469', user_name = 'Arjun', user_gender = 'Male' 
+        WHERE user_id = 'user_9873986469' AND phone_number IS NULL
+      `);
+      results.push('✅ Updated existing user with phone number');
+      console.log('✅ Updated existing user with phone number');
+    } catch (error) {
+      results.push(`⚠️ User update: ${error.message}`);
+      console.log(`⚠️ User update: ${error.message}`);
+    }
+    
+    res.json({
+      success: true,
+      message: 'Database schema fix completed!',
+      results: results
+    });
+    
+  } catch (error) {
+    console.error('Schema fix error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Schema fix failed',
+      error: error.message 
+    });
+  }
+});
+
 // Enhanced health check with allowlist status
 app.get('/api/health', async (req, res) => {
   try {
