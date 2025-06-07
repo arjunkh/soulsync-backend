@@ -2038,7 +2038,7 @@ console.log('=======================================');
       }
       
       // PHASE 2.2: Generate enhanced system prompt with strategic MBTI targeting
-      const adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
+      let adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
 
 // PHASE 2.2: MANDATORY Strategic MBTI targeting
 if (analysis.next_question_suggestion) {
