@@ -1978,7 +1978,18 @@ app.post('/api/chat', async (req, res) => {
         conversationCount,
         user.personality_data || {} // Pass existing MBTI data for strategic targeting
       );
-      
+
+    // Add this right after: const analysis = aria.analyzeMessage(...)
+console.log('=== PHASE 2.2 CONVERSATION DEBUG ===');
+console.log('📱 User ID:', userId);
+console.log('💬 Latest message:', latestUserMessage.content.substring(0, 50) + '...');
+console.log('🔍 MBTI Analysis exists:', !!analysis.mbti_analysis);
+console.log('🎯 Dimensions Needed:', analysis.mbti_needs?.dimensions_needed || 'None');
+console.log('🌉 Topic Bridges found:', analysis.topic_bridges?.length || 0);
+console.log('💬 Strategic Question:', analysis.next_question_suggestion ? 'Generated' : 'Not generated');
+console.log('🎭 Celebration opportunity:', !!analysis.celebration_opportunity);
+console.log('⚠️ Resistance detected:', !!analysis.resistance_signals?.detected);
+console.log('=======================================');
       // PHASE 2.2: Enhanced user profile updates with MBTI confidence tracking
       const updatedProfile = await updateUserProfile(userId, {
         interests: analysis.interests,
