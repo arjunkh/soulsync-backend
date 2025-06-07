@@ -1,4 +1,4 @@
-// Intelligent Aria Backend with PostgreSQL Memory System + Allowlist - phase 2.1
+// Intelligent Aria Backend with PostgreSQL Memory System + Allowlist - PHASE 2.1 COMPLETE
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -200,7 +200,7 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
           userName, 
           userGender,
           { name: userName, gender: userGender }, 
-          { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted' },
+          { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 },
           0
         ]
       );
@@ -565,41 +565,6 @@ class ConversationFlowEngine {
         "You disagree about something important. Do you hash it out immediately or take time to think first?"
       ]
     };
-    
-    this.psychologyFramework = {
-      MBTI_DETECTION: {
-        // Framework for detecting Myers-Briggs personality types
-        extrovert_scenarios: [], // To be filled in Phase 2.2
-        sensing_scenarios: [],   // To be filled in Phase 2.2
-        thinking_scenarios: [],  // To be filled in Phase 2.2
-        judging_scenarios: []    // To be filled in Phase 2.2
-      },
-      
-      ADVANCED_LOVE_LANGUAGES: {
-        // Enhanced love language detection through scenarios
-        quality_time_indicators: [],     // To be enhanced in Phase 2.3
-        physical_touch_indicators: [],   // To be enhanced in Phase 2.3
-        acts_of_service_indicators: [], // To be enhanced in Phase 2.3
-        words_of_affirmation_indicators: [], // To be enhanced in Phase 2.3
-        gifts_indicators: []            // To be enhanced in Phase 2.3
-      },
-      
-      ATTACHMENT_STYLES: {
-        // Sophisticated attachment style detection
-        secure_indicators: [],   // To be enhanced in Phase 2.3
-        anxious_indicators: [],  // To be enhanced in Phase 2.3
-        avoidant_indicators: [], // To be enhanced in Phase 2.3
-        disorganized_indicators: [] // To be enhanced in Phase 2.3
-      },
-      
-      VALUES_LIFESTYLE: {
-        // Values and lifestyle compatibility detection
-        family_values: [],       // To be filled in Phase 2.4
-        financial_values: [],    // To be filled in Phase 2.4
-        lifestyle_preferences: [], // To be filled in Phase 2.4
-        conflict_resolution: []   // To be filled in Phase 2.4
-      }
-    };
   }
   
   // Get appropriate question based on intimacy level and conversation context
@@ -664,232 +629,11 @@ class ConversationFlowEngine {
     if (currentLevel === 3 && conversationCount >= 15) return true;
     
     return false;
-  }
-  
-  // Get celebration response for insights discovered
-  getCelebrationResponse(insight, userName) {
-    const celebrations = {
-      love_language: [
-        `I KNEW you were a ${insight} person! That's so beautiful.`,
-        `${insight}... yes! I can totally see that about you, ${userName}.`,
-        `The way you described that? Pure ${insight} energy. Love it.`
-      ],
-      personality_trait: [
-        `This makes so much sense about you!`,
-        `I'm getting such a clear picture of who you are, ${userName}.`,
-        `The pieces are coming together... you're fascinating.`
-      ],
-      values: [
-        `Your values are so clear and authentic.`,
-        `I really respect how thoughtful you are about this.`,
-        `This tells me everything about your heart, ${userName}.`
-      ]
-    };
-    
-    const category = celebrations[insight.category] || celebrations.personality_trait;
-    return category[Math.floor(Math.random() * category.length)];
   }
   
   getLevelKey(level) {
     const levelKeys = ['ICE_BREAKER', 'GETTING_ACQUAINTED', 'BUILDING_TRUST', 'DEEPER_CONNECTION', 'INTIMATE_SHARING'];
     return levelKeys[level] || 'ICE_BREAKER';
-  }
-}
-
-// Aria's adaptive personality system with Natural Conversation Flow Engine
-  constructor() {
-    this.storyTemplates = {
-      ICE_BREAKER: [
-        "Before I ask anything... did you eat today?",
-        "Okay, honest question - are you more of a morning person or do you come alive at night?",
-        "Quick - coffee, tea, or you're one of those 'just water' people?",
-        "Tell me something that made you smile recently.",
-        "What's your Friday night looking like? Planned chaos or peaceful vibes?"
-      ],
-      
-      GETTING_ACQUAINTED: [
-        "Paint me a picture of your ideal Sunday. What does that look like?",
-        "If you had to pick one - beach sunrise or mountain sunset?",
-        "Tell me about a place that just feels like *you* when you're there.",
-        "What's something you do that makes you lose track of time?",
-        "Are you the friend who plans everything or the one who says 'surprise me'?"
-      ],
-      
-      BUILDING_TRUST: [
-        "Think about the last time you felt truly understood. What was happening?",
-        "When life gets heavy, what helps you reset? Like, what's your go-to?",
-        "Tell me about someone who shaped who you are today.",
-        "What's a belief you hold that might surprise people?",
-        "Describe a moment when you felt most like yourself."
-      ],
-      
-      DEEPER_CONNECTION: [
-        "Imagine your perfect relationship dynamic. How do you and your person navigate life together?",
-        "When you think about family someday, what feels important to you?",
-        "How do you handle it when someone you care about is upset with you?",
-        "What does 'being loved' actually feel like to you?",
-        "Tell me about a dream you have that scares you a little."
-      ],
-      
-      INTIMATE_SHARING: [
-        "What's something about love that you've learned the hard way?",
-        "If your future partner earned more than you and wanted to delay kids, how would you navigate that?",
-        "What's a fear you have about relationships that you don't usually voice?",
-        "Describe the moment you'd know you want to spend your life with someone.",
-        "What's something you need in love that you're almost afraid to ask for?"
-      ]
-    };
-    
-    this.interactiveElements = {
-      GUESS_GAMES: [
-        "Let me guess... you're the type who makes mental lists but never writes them down, right?",
-        "I'm getting strong 'secretly loves romance movies' vibes from you. Am I right?",
-        "You strike me as someone who has strong opinions about how to load a dishwasher. True?",
-        "I bet you're either extremely punctual or fashionably late - no in-between. Which one?"
-      ],
-      
-      WOULD_YOU_RATHER: [
-        "Would you rather: deep conversation under the stars or dancing until 3am?",
-        "Quick choice: handwritten love letter or surprise weekend getaway?",
-        "Would you rather: big group dinner or intimate dinner for two?",
-        "Choose: partner who's your biggest cheerleader or your intellectual equal?"
-      ],
-      
-      MINI_SCENARIOS: [
-        "You're planning a surprise for someone special. Are you going big and bold or thoughtful and personal?",
-        "It's raining, you're both free - Netflix or build a blanket fort?",
-        "Your person had a terrible day. Do you give them space or bring them their favorite comfort food?",
-        "You disagree about something important. Do you hash it out immediately or take time to think first?"
-      ]
-    };
-    
-    this.psychologyFramework = {
-      MBTI_DETECTION: {
-        // Framework for detecting Myers-Briggs personality types
-        extrovert_scenarios: [], // To be filled in Phase 2.2
-        sensing_scenarios: [],   // To be filled in Phase 2.2
-        thinking_scenarios: [],  // To be filled in Phase 2.2
-        judging_scenarios: []    // To be filled in Phase 2.2
-      },
-      
-      ADVANCED_LOVE_LANGUAGES: {
-        // Enhanced love language detection through scenarios
-        quality_time_indicators: [],     // To be enhanced in Phase 2.3
-        physical_touch_indicators: [],   // To be enhanced in Phase 2.3
-        acts_of_service_indicators: [], // To be enhanced in Phase 2.3
-        words_of_affirmation_indicators: [], // To be enhanced in Phase 2.3
-        gifts_indicators: []            // To be enhanced in Phase 2.3
-      },
-      
-      ATTACHMENT_STYLES: {
-        // Sophisticated attachment style detection
-        secure_indicators: [],   // To be enhanced in Phase 2.3
-        anxious_indicators: [],  // To be enhanced in Phase 2.3
-        avoidant_indicators: [], // To be enhanced in Phase 2.3
-        disorganized_indicators: [] // To be enhanced in Phase 2.3
-      },
-      
-      VALUES_LIFESTYLE: {
-        // Values and lifestyle compatibility detection
-        family_values: [],       // To be filled in Phase 2.4
-        financial_values: [],    // To be filled in Phase 2.4
-        lifestyle_preferences: [], // To be filled in Phase 2.4
-        conflict_resolution: []   // To be filled in Phase 2.4
-      }
-    };
-  }
-  
-  // Get appropriate question based on intimacy level and conversation context
-  getNextQuestion(intimacyLevel, userMood, conversationHistory = []) {
-    const levelKey = this.getLevelKey(intimacyLevel);
-    const templates = this.storyTemplates[levelKey] || this.storyTemplates.ICE_BREAKER;
-    
-    // Avoid repeating recent questions
-    const usedQuestions = conversationHistory.slice(-5).map(h => h.question).filter(Boolean);
-    const availableQuestions = templates.filter(q => !usedQuestions.includes(q));
-    
-    if (availableQuestions.length === 0) {
-      // If all questions used, move to next level or use interactive elements
-      return this.getInteractiveElement();
-    }
-    
-    // Select question based on user mood
-    if (userMood === 'low_energy' || userMood === 'stressed') {
-      // Choose gentler, more supportive questions
-      const gentleQuestions = availableQuestions.filter(q => 
-        q.includes('feel') || q.includes('help') || q.includes('comfort')
-      );
-      return gentleQuestions.length > 0 ? 
-        gentleQuestions[Math.floor(Math.random() * gentleQuestions.length)] :
-        availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
-    }
-    
-    if (userMood === 'positive_excited') {
-      // Choose more energetic, engaging questions
-      const energeticQuestions = availableQuestions.filter(q => 
-        q.includes('!') || q.includes('imagine') || q.includes('perfect')
-      );
-      return energeticQuestions.length > 0 ? 
-        energeticQuestions[Math.floor(Math.random() * energeticQuestions.length)] :
-        availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
-    }
-    
-    // Default: random appropriate question
-    return availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
-  }
-  
-  // Get interactive element (mini-game, would you rather, etc.)
-  getInteractiveElement() {
-    const allElements = [
-      ...this.interactiveElements.GUESS_GAMES,
-      ...this.interactiveElements.WOULD_YOU_RATHER,
-      ...this.interactiveElements.MINI_SCENARIOS
-    ];
-    return allElements[Math.floor(Math.random() * allElements.length)];
-  }
-  
-  // Determine if user response suggests moving to next intimacy level
-  shouldLevelUp(userResponse, currentLevel, conversationCount) {
-    const responseLength = userResponse.length;
-    const hasPersonalSharing = /\b(feel|felt|think|believe|love|scared|dream|hope|want)\b/i.test(userResponse);
-    const hasEmotionalWords = /\b(happy|sad|excited|worried|comfortable|close|connected)\b/i.test(userResponse);
-    
-    // Level up conditions
-    if (currentLevel === 0 && responseLength > 50 && conversationCount >= 3) return true;
-    if (currentLevel === 1 && hasPersonalSharing && conversationCount >= 6) return true;
-    if (currentLevel === 2 && hasEmotionalWords && responseLength > 80) return true;
-    if (currentLevel === 3 && conversationCount >= 15) return true;
-    
-    return false;
-  }
-  
-  // Get celebration response for insights discovered
-  getCelebrationResponse(insight, userName) {
-    const celebrations = {
-      love_language: [
-        `I KNEW you were a ${insight} person! That's so beautiful.`,
-        `${insight}... yes! I can totally see that about you, ${userName}.`,
-        `The way you described that? Pure ${insight} energy. Love it.`
-      ],
-      personality_trait: [
-        `This makes so much sense about you!`,
-        `I'm getting such a clear picture of who you are, ${userName}.`,
-        `The pieces are coming together... you're fascinating.`
-      ],
-      values: [
-        `Your values are so clear and authentic.`,
-        `I really respect how thoughtful you are about this.`,
-        `This tells me everything about your heart, ${userName}.`
-      ]
-    };
-    
-    const category = celebrations[insight.category] || celebrations.personality_trait;
-    return category[Math.floor(Math.random() * category.length)];
-  }
-  
-  getLevelKey(level) {
-    const keys = Object.keys(this.intimacyLevels);
-    return keys[level] || 'ICE_BREAKER';
   }
 }
 
@@ -906,16 +650,17 @@ class AriaPersonality {
     
     // Progressive intimacy levels
     this.intimacyLevels = {
-      ICE_BREAKER: 0,      // Getting comfortable, light topics
-      GETTING_ACQUAINTED: 1, // Basic personality, interests
-      BUILDING_TRUST: 2,    // Personal stories, preferences
-      DEEPER_CONNECTION: 3, // Values, relationships, goals
-      INTIMATE_SHARING: 4   // Deep psychology, fears, dreams
+      ICE_BREAKER: 0,
+      GETTING_ACQUAINTED: 1,
+      BUILDING_TRUST: 2,
+      DEEPER_CONNECTION: 3,
+      INTIMATE_SHARING: 4
     };
     
     // Story-based conversation templates
     this.conversationFlow = new ConversationFlowEngine();
   }
+
   // ENHANCED: Comprehensive message analysis with conversation flow
   analyzeMessage(message, userHistory = [], currentIntimacyLevel = 0, conversationCount = 0) {
     const analysis = {
@@ -951,7 +696,119 @@ class AriaPersonality {
 
     return analysis;
   }
-  
+
+  detectMood(message) {
+    const msg = message.toLowerCase();
+    
+    if (msg.includes('excited') || msg.includes('amazing') || msg.includes('love') || msg.includes('great')) {
+      return 'positive_excited';
+    }
+    if (msg.includes('tired') || msg.includes('exhausted') || msg.includes('drained')) {
+      return 'low_energy';
+    }
+    if (msg.includes('stressed') || msg.includes('anxious') || msg.includes('worried')) {
+      return 'stressed';
+    }
+    if (msg.includes('sad') || msg.includes('down') || msg.includes('upset')) {
+      return 'sad';
+    }
+    if (msg.includes('nothing') || msg.includes('fine') || msg.includes('okay')) {
+      return 'guarded';
+    }
+    
+    return 'neutral';
+  }
+
+  detectEnergy(message) {
+    const msg = message.toLowerCase();
+    const highEnergyWords = ['excited', 'amazing', 'love', 'awesome', '!', 'wow'];
+    const lowEnergyWords = ['tired', 'meh', 'okay', 'fine', 'whatever'];
+    
+    const highCount = highEnergyWords.filter(word => msg.includes(word)).length;
+    const lowCount = lowEnergyWords.filter(word => msg.includes(word)).length;
+    
+    if (highCount > lowCount) return 'high';
+    if (lowCount > highCount) return 'low';
+    return 'medium';
+  }
+
+  extractInterests(message) {
+    const msg = message.toLowerCase();
+    const interests = [];
+    
+    // Food & Cooking
+    if (msg.includes('breakfast') || msg.includes('coffee') || msg.includes('food') || 
+        msg.includes('cooking') || msg.includes('eat') || msg.includes('meal')) {
+      interests.push('food_cooking');
+    }
+    
+    // Work & Career
+    if (msg.includes('work') || msg.includes('job') || msg.includes('career') || msg.includes('office')) {
+      interests.push('work_career');
+    }
+    
+    // Relationships & Love
+    if (msg.includes('relationship') || msg.includes('dating') || msg.includes('love') || 
+        msg.includes('partner') || msg.includes('boyfriend') || msg.includes('girlfriend')) {
+      interests.push('relationships');
+    }
+    
+    // Lifestyle & Home
+    if (msg.includes('home') || msg.includes('cozy') || msg.includes('apartment') || msg.includes('house')) {
+      interests.push('lifestyle_home');
+    }
+    
+    // Exercise & Health
+    if (msg.includes('gym') || msg.includes('workout') || msg.includes('exercise') || msg.includes('health')) {
+      interests.push('fitness_health');
+    }
+    
+    return interests;
+  }
+
+  detectCommunicationStyle(message) {
+    const length = message.length;
+    const hasEmotions = /[!?.]/.test(message);
+    const isDetailed = length > 50;
+    
+    if (isDetailed && hasEmotions) return 'expressive_detailed';
+    if (isDetailed) return 'thoughtful_detailed';
+    if (hasEmotions) return 'expressive_brief';
+    return 'casual_brief';
+  }
+
+  detectEmotionalNeeds(message) {
+    const msg = message.toLowerCase();
+    const needs = [];
+    
+    if (msg.includes('tired') || msg.includes('stressed')) {
+      needs.push('support', 'understanding');
+    }
+    if (msg.includes('excited') || msg.includes('amazing')) {
+      needs.push('enthusiasm', 'celebration');
+    }
+    if (msg.includes('confused') || msg.includes('not sure')) {
+      needs.push('guidance', 'clarity');
+    }
+    if (msg.includes('lonely') || msg.includes('alone')) {
+      needs.push('connection', 'companionship');
+    }
+    
+    return needs;
+  }
+
+  extractTopics(message) {
+    const topics = [];
+    const msg = message.toLowerCase();
+    
+    if (msg.includes('morning') || msg.includes('breakfast')) topics.push('morning_routine');
+    if (msg.includes('weekend') || msg.includes('sunday')) topics.push('weekends');
+    if (msg.includes('family') || msg.includes('parents')) topics.push('family');
+    if (msg.includes('friends') || msg.includes('social')) topics.push('social_life');
+    
+    return topics;
+  }
+
   // ENHANCED: Advanced Love Language Detection (Phase 2.3 ready)
   detectAdvancedLoveLanguage(message) {
     const msg = message.toLowerCase();
@@ -1022,6 +879,24 @@ class AriaPersonality {
     }
     
     return [...new Set(hints)];
+  }
+
+  // Family values detection
+  detectFamilyValueHints(message) {
+    const msg = message.toLowerCase();
+    const hints = [];
+    
+    if (msg.includes('kids') || msg.includes('children') || msg.includes('family')) {
+      hints.push('family_oriented');
+    }
+    if (msg.includes('career') || msg.includes('goals') || msg.includes('ambitious')) {
+      hints.push('career_focused');
+    }
+    if (msg.includes('parents') || msg.includes('close to family')) {
+      hints.push('family_connected');
+    }
+    
+    return hints;
   }
   
   // NEW: MBTI Indicators Framework (Phase 2.2 ready)
@@ -1155,178 +1030,6 @@ class AriaPersonality {
     }
     
     return null;
-  }
-
-  detectMood(message) {
-    const msg = message.toLowerCase();
-    
-    if (msg.includes('excited') || msg.includes('amazing') || msg.includes('love') || msg.includes('great')) {
-      return 'positive_excited';
-    }
-    if (msg.includes('tired') || msg.includes('exhausted') || msg.includes('drained')) {
-      return 'low_energy';
-    }
-    if (msg.includes('stressed') || msg.includes('anxious') || msg.includes('worried')) {
-      return 'stressed';
-    }
-    if (msg.includes('sad') || msg.includes('down') || msg.includes('upset')) {
-      return 'sad';
-    }
-    if (msg.includes('nothing') || msg.includes('fine') || msg.includes('okay')) {
-      return 'guarded';
-    }
-    
-    return 'neutral';
-  }
-
-  detectEnergy(message) {
-    const msg = message.toLowerCase();
-    const highEnergyWords = ['excited', 'amazing', 'love', 'awesome', '!', 'wow'];
-    const lowEnergyWords = ['tired', 'meh', 'okay', 'fine', 'whatever'];
-    
-    const highCount = highEnergyWords.filter(word => msg.includes(word)).length;
-    const lowCount = lowEnergyWords.filter(word => msg.includes(word)).length;
-    
-    if (highCount > lowCount) return 'high';
-    if (lowCount > highCount) return 'low';
-    return 'medium';
-  }
-
-  extractInterests(message) {
-    const msg = message.toLowerCase();
-    const interests = [];
-    
-    // Food & Cooking
-    if (msg.includes('breakfast') || msg.includes('coffee') || msg.includes('food') || 
-        msg.includes('cooking') || msg.includes('eat') || msg.includes('meal')) {
-      interests.push('food_cooking');
-    }
-    
-    // Work & Career
-    if (msg.includes('work') || msg.includes('job') || msg.includes('career') || msg.includes('office')) {
-      interests.push('work_career');
-    }
-    
-    // Relationships & Love
-    if (msg.includes('relationship') || msg.includes('dating') || msg.includes('love') || 
-        msg.includes('partner') || msg.includes('boyfriend') || msg.includes('girlfriend')) {
-      interests.push('relationships');
-    }
-    
-    // Lifestyle & Home
-    if (msg.includes('home') || msg.includes('cozy') || msg.includes('apartment') || msg.includes('house')) {
-      interests.push('lifestyle_home');
-    }
-    
-    // Exercise & Health
-    if (msg.includes('gym') || msg.includes('workout') || msg.includes('exercise') || msg.includes('health')) {
-      interests.push('fitness_health');
-    }
-    
-    return interests;
-  }
-
-  detectCommunicationStyle(message) {
-    const length = message.length;
-    const hasEmotions = /[!?.]/.test(message);
-    const isDetailed = length > 50;
-    
-    if (isDetailed && hasEmotions) return 'expressive_detailed';
-    if (isDetailed) return 'thoughtful_detailed';
-    if (hasEmotions) return 'expressive_brief';
-    return 'casual_brief';
-  }
-
-  detectEmotionalNeeds(message) {
-    const msg = message.toLowerCase();
-    const needs = [];
-    
-    if (msg.includes('tired') || msg.includes('stressed')) {
-      needs.push('support', 'understanding');
-    }
-    if (msg.includes('excited') || msg.includes('amazing')) {
-      needs.push('enthusiasm', 'celebration');
-    }
-    if (msg.includes('confused') || msg.includes('not sure')) {
-      needs.push('guidance', 'clarity');
-    }
-    if (msg.includes('lonely') || msg.includes('alone')) {
-      needs.push('connection', 'companionship');
-    }
-    
-    return needs;
-  }
-
-  extractTopics(message) {
-    const topics = [];
-    const msg = message.toLowerCase();
-    
-    if (msg.includes('morning') || msg.includes('breakfast')) topics.push('morning_routine');
-    if (msg.includes('weekend') || msg.includes('sunday')) topics.push('weekends');
-    if (msg.includes('family') || msg.includes('parents')) topics.push('family');
-    if (msg.includes('friends') || msg.includes('social')) topics.push('social_life');
-    
-    return topics;
-  }
-
-  // Love language detection
-  detectLoveLanguageHints(message) {
-    const msg = message.toLowerCase();
-    const hints = [];
-    
-    if (msg.includes('time') || msg.includes('together') || msg.includes('presence')) {
-      hints.push('quality_time');
-    }
-    if (msg.includes('touch') || msg.includes('hug') || msg.includes('hold')) {
-      hints.push('physical_touch');
-    }
-    if (msg.includes('help') || msg.includes('do') || msg.includes('support')) {
-      hints.push('acts_of_service');
-    }
-    if (msg.includes('words') || msg.includes('tell') || msg.includes('appreciate')) {
-      hints.push('words_of_affirmation');
-    }
-    if (msg.includes('gift') || msg.includes('surprise') || msg.includes('thoughtful')) {
-      hints.push('gifts');
-    }
-    
-    return hints;
-  }
-
-  // Attachment style hints
-  detectAttachmentHints(message) {
-    const msg = message.toLowerCase();
-    const hints = [];
-    
-    if (msg.includes('space') || msg.includes('independent') || msg.includes('alone time')) {
-      hints.push('avoidant_tendency');
-    }
-    if (msg.includes('close') || msg.includes('together') || msg.includes('connection')) {
-      hints.push('secure_tendency');
-    }
-    if (msg.includes('worry') || msg.includes('anxious') || msg.includes('need reassurance')) {
-      hints.push('anxious_tendency');
-    }
-    
-    return hints;
-  }
-
-  // Family values detection
-  detectFamilyValueHints(message) {
-    const msg = message.toLowerCase();
-    const hints = [];
-    
-    if (msg.includes('kids') || msg.includes('children') || msg.includes('family')) {
-      hints.push('family_oriented');
-    }
-    if (msg.includes('career') || msg.includes('goals') || msg.includes('ambitious')) {
-      hints.push('career_focused');
-    }
-    if (msg.includes('parents') || msg.includes('close to family')) {
-      hints.push('family_connected');
-    }
-    
-    return hints;
   }
 
   // ENHANCED: Generate adaptive system prompt with Natural Conversation Flow
@@ -1496,7 +1199,7 @@ async function getOrCreateUser(userId) {
       // Create new user
       result = await pool.query(
         'INSERT INTO users (user_id, personality_data, relationship_context) VALUES ($1, $2, $3) RETURNING *',
-        [userId, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted' }]
+        [userId, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 }]
       );
     } else {
       // Update last_seen for existing user
@@ -1553,7 +1256,9 @@ async function updateUserProfile(userId, newInsights) {
       emotional_patterns: { ...currentData.emotional_patterns, ...newInsights.emotional_patterns },
       love_language_hints: [...new Set([...(currentData.love_language_hints || []), ...(newInsights.love_language_hints || [])])],
       attachment_hints: [...new Set([...(currentData.attachment_hints || []), ...(newInsights.attachment_hints || [])])],
-      family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])]
+      family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])],
+      mbti_indicators: { ...currentData.mbti_indicators, ...newInsights.mbti_indicators },
+      conversation_flow: { ...currentData.conversation_flow, ...newInsights.conversation_flow }
     };
     
     await pool.query(
@@ -1791,7 +1496,7 @@ app.get('/api/user-insights/:userId', async (req, res) => {
       conversationCount: conversations.length,
       totalConversations: userData.total_conversations,
       recentTopics: conversations.slice(-3).map(conv => conv.session_summary),
-      profileCompleteness: calculateProfileCompleteness(userData.personality_data)
+      profileCompleteness: calculateEnhancedProfileCompleteness(userData.personality_data)
     });
   } catch (error) {
     console.error('Error getting user insights:', error);
