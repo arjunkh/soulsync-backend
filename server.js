@@ -2040,22 +2040,52 @@ console.log('=======================================');
       // PHASE 2.2: Generate enhanced system prompt with strategic MBTI targeting
       let adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
 
-// PHASE 2.2: MANDATORY Strategic MBTI targeting
+// PHASE 2.2: PERSISTENT Strategic MBTI targeting
+let strategicInstructions = '';
+
+// Always prioritize undiscovered dimensions
+if (analysis.mbti_needs?.dimensions_needed && analysis.mbti_needs.dimensions_needed.length > 0) {
+  const targetDimension = analysis.mbti_needs.dimensions_needed[0];
+  strategicInstructions += `\n\n🎯 PRIMARY MISSION: You must discover their ${targetDimension} preference. This is your main goal.`;
+}
+
+// Force strategic question usage
 if (analysis.next_question_suggestion) {
-  adaptivePrompt += `\n\n🚨 CRITICAL MISSION - ASK THIS STRATEGIC QUESTION:
+  strategicInstructions += `\n\n🚨 USE THIS STRATEGIC QUESTION:
 "${analysis.next_question_suggestion}"
 
-DO NOT ask about favorite genres or general movie preferences. You MUST ask this psychology-targeting question that reveals their personality type. This is not optional.`;
+This targets their personality type. Do not ask generic questions about preferences or favorites.`;
 }
 
+// Use topic bridges when available
 if (analysis.topic_bridges && analysis.topic_bridges.length > 0) {
-  adaptivePrompt += `\n\n🌉 USE THIS BRIDGE:
+  strategicInstructions += `\n\n🌉 BRIDGE OPPORTUNITY:
 "${analysis.topic_bridges[0].bridge}"
 
-Bridge from "${analysis.topic_bridges[0].from}" to personality insights. Do not ask surface-level questions.`;
+Bridge from "${analysis.topic_bridges[0].from}" to ${analysis.topic_bridges[0].targets} insights.`;
 }
 
-adaptivePrompt += `\n\n⚠️ ABSOLUTE REQUIREMENT: Your response MUST advance personality discovery. No generic small talk allowed.`;
+// Detect and celebrate MBTI discoveries
+if (analysis.celebration_opportunity) {
+  strategicInstructions += `\n\n🎉 PERSONALITY DISCOVERY DETECTED:
+They just revealed a ${analysis.celebration_opportunity.type}! Celebrate this insight and immediately pivot to the next psychological dimension you need to discover.`;
+}
+
+// Handle resistance 
+if (analysis.resistance_signals?.detected) {
+  strategicInstructions += `\n\n⚠️ RESISTANCE DETECTED: User avoiding questions. Switch approach - be more indirect and story-based.`;
+}
+
+// ABSOLUTE REQUIREMENTS
+strategicInstructions += `\n\n🚨 ABSOLUTE REQUIREMENTS:
+1. NEVER ask about "favorite genres" or surface preferences
+2. EVERY response must advance personality discovery
+3. When they reveal personality traits, CELEBRATE and move to next dimension
+4. Stay focused on psychology, not entertainment details
+5. Your goal is MBTI detection, not movie recommendations`;
+
+// Add strategic instructions to prompt
+adaptivePrompt += strategicInstructions;
       // Prepare messages with adaptive system prompt
       const adaptiveMessages = [
         { role: 'system', content: adaptivePrompt },
