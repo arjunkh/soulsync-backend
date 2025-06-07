@@ -2039,7 +2039,23 @@ console.log('=======================================');
       
       // PHASE 2.2: Generate enhanced system prompt with strategic MBTI targeting
       const adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
-      
+
+// PHASE 2.2: MANDATORY Strategic MBTI targeting
+if (analysis.next_question_suggestion) {
+  adaptivePrompt += `\n\n🚨 CRITICAL MISSION - ASK THIS STRATEGIC QUESTION:
+"${analysis.next_question_suggestion}"
+
+DO NOT ask about favorite genres or general movie preferences. You MUST ask this psychology-targeting question that reveals their personality type. This is not optional.`;
+}
+
+if (analysis.topic_bridges && analysis.topic_bridges.length > 0) {
+  adaptivePrompt += `\n\n🌉 USE THIS BRIDGE:
+"${analysis.topic_bridges[0].bridge}"
+
+Bridge from "${analysis.topic_bridges[0].from}" to personality insights. Do not ask surface-level questions.`;
+}
+
+adaptivePrompt += `\n\n⚠️ ABSOLUTE REQUIREMENT: Your response MUST advance personality discovery. No generic small talk allowed.`;
       // Prepare messages with adaptive system prompt
       const adaptiveMessages = [
         { role: 'system', content: adaptivePrompt },
