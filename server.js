@@ -1,4 +1,4 @@
-// Intelligent Aria Backend with PostgreSQL Memory System + Allowlist - PHASE 1 FIXES
+// Intelligent Aria Backend with PostgreSQL Memory System + Allowlist - COMPLETE FINAL VERSION
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -42,7 +42,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // Conversations table (same as before)
+    // Conversations table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS conversations (
         id SERIAL PRIMARY KEY,
@@ -54,7 +54,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // NEW: Phone allowlist table
+    // Phone allowlist table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS phone_allowlist (
         id SERIAL PRIMARY KEY,
@@ -71,7 +71,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // Add initial admin numbers (REPLACE WITH YOUR ACTUAL PHONE NUMBERS)
+    // Add initial admin numbers
     await pool.query(`
       INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status) 
       VALUES 
@@ -89,7 +89,7 @@ async function initializeDatabase() {
 // Initialize database on startup
 initializeDatabase();
 
-// FIXED: Enhanced phone number validation and normalization
+// Phone number validation and normalization helper
 function normalizePhoneNumber(phone) {
   if (!phone) return null;
   
@@ -125,7 +125,7 @@ function normalizePhoneNumber(phone) {
   return normalized;
 }
 
-// FIXED: Enhanced phone allowlist check with debugging
+// Check if phone number is in allowlist
 async function isPhoneAllowed(phoneNumber) {
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
@@ -227,7 +227,7 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
   }
 }
 
-// FIXED: Enhanced phone verification endpoint with detailed error handling
+// Enhanced phone verification endpoint
 app.post('/api/verify-phone', async (req, res) => {
   try {
     console.log('📱 Phone verification request received:', req.body);
@@ -300,12 +300,12 @@ app.post('/api/verify-phone', async (req, res) => {
   }
 });
 
-// DEBUGGING: Add phone number to allowlist easily
+// Admin: Add phone number to allowlist
 app.post('/api/admin/add-phone', async (req, res) => {
   try {
     const { phoneNumber, userName = '', userGender = '', notes = '', adminKey } = req.body;
     
-    // Simple admin protection (you can change this key)
+    // Simple admin protection
     if (adminKey !== 'soulsync_admin_2025') {
       return res.status(401).json({ message: 'Unauthorized' });
     }
@@ -347,7 +347,40 @@ app.post('/api/admin/add-phone', async (req, res) => {
   }
 });
 
-// DEBUGGING: View allowlist status
+// Admin: Remove phone number from allowlist
+app.post('/api/admin/remove-phone', async (req, res) => {
+  try {
+    const { phoneNumber, adminKey } = req.body;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    
+    await pool.query(
+      'UPDATE phone_allowlist SET status = $1 WHERE phone_number = $2',
+      ['removed', normalizedPhone]
+    );
+    
+    // Get updated count
+    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const currentCount = parseInt(countResult.rows[0].count);
+    
+    res.json({ 
+      success: true, 
+      message: `Phone ${normalizedPhone} removed from allowlist`,
+      currentCount: currentCount,
+      available: 35 - currentCount
+    });
+    
+  } catch (error) {
+    console.error('Remove phone error:', error);
+    res.status(500).json({ message: 'Failed to remove phone number' });
+  }
+});
+
+// Admin: View allowlist status
 app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
   try {
     const { adminKey } = req.params;
@@ -397,7 +430,75 @@ app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
   }
 });
 
-// Aria's adaptive personality system (keeping existing)
+// ADMIN: Fix database schema (add missing columns)
+app.get('/api/admin/fix-schema/:adminKey', async (req, res) => {
+  try {
+    const { adminKey } = req.params;
+    
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    
+    console.log('🔧 Fixing database schema...');
+    
+    // Add missing columns to users table
+    const alterCommands = [
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20) UNIQUE',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_name VARCHAR(100)',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_gender VARCHAR(10)',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS total_conversations INTEGER DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_completeness INTEGER DEFAULT 0'
+    ];
+    
+    const results = [];
+    
+    for (const command of alterCommands) {
+      try {
+        await pool.query(command);
+        results.push(`✅ ${command}`);
+        console.log(`✅ ${command}`);
+      } catch (error) {
+        if (error.message.includes('already exists')) {
+          results.push(`⚠️ ${command} - Column already exists`);
+          console.log(`⚠️ ${command} - Column already exists`);
+        } else {
+          results.push(`❌ ${command} - Error: ${error.message}`);
+          console.log(`❌ ${command} - Error: ${error.message}`);
+        }
+      }
+    }
+    
+    // Update existing user with phone number if exists
+    try {
+      await pool.query(`
+        UPDATE users 
+        SET phone_number = '+919873986469', user_name = 'Arjun', user_gender = 'Male' 
+        WHERE user_id = 'user_9873986469' AND phone_number IS NULL
+      `);
+      results.push('✅ Updated existing user with phone number');
+      console.log('✅ Updated existing user with phone number');
+    } catch (error) {
+      results.push(`⚠️ User update: ${error.message}`);
+      console.log(`⚠️ User update: ${error.message}`);
+    }
+    
+    res.json({
+      success: true,
+      message: 'Database schema fix completed!',
+      results: results
+    });
+    
+  } catch (error) {
+    console.error('Schema fix error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Schema fix failed',
+      error: error.message 
+    });
+  }
+});
+
+// Aria's adaptive personality system
 class AriaPersonality {
   constructor() {
     this.basePersonality = {
@@ -993,74 +1094,6 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// ADMIN: Fix database schema (add missing columns)
-app.post('/api/admin/fix-schema/:adminKey', async (req, res) => {
-  try {
-    const { adminKey } = req.params;
-    
-    if (adminKey !== 'soulsync_admin_2025') {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-    
-    console.log('🔧 Fixing database schema...');
-    
-    // Add missing columns to users table
-    const alterCommands = [
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20) UNIQUE',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_name VARCHAR(100)',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_gender VARCHAR(10)',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS total_conversations INTEGER DEFAULT 0',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_completeness INTEGER DEFAULT 0'
-    ];
-    
-    const results = [];
-    
-    for (const command of alterCommands) {
-      try {
-        await pool.query(command);
-        results.push(`✅ ${command}`);
-        console.log(`✅ ${command}`);
-      } catch (error) {
-        if (error.message.includes('already exists')) {
-          results.push(`⚠️ ${command} - Column already exists`);
-          console.log(`⚠️ ${command} - Column already exists`);
-        } else {
-          results.push(`❌ ${command} - Error: ${error.message}`);
-          console.log(`❌ ${command} - Error: ${error.message}`);
-        }
-      }
-    }
-    
-    // Update existing user with phone number if exists
-    try {
-      await pool.query(`
-        UPDATE users 
-        SET phone_number = '+919873986469', user_name = 'Arjun', user_gender = 'Male' 
-        WHERE user_id = 'user_9873986469' AND phone_number IS NULL
-      `);
-      results.push('✅ Updated existing user with phone number');
-      console.log('✅ Updated existing user with phone number');
-    } catch (error) {
-      results.push(`⚠️ User update: ${error.message}`);
-      console.log(`⚠️ User update: ${error.message}`);
-    }
-    
-    res.json({
-      success: true,
-      message: 'Database schema fix completed!',
-      results: results
-    });
-    
-  } catch (error) {
-    console.error('Schema fix error:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Schema fix failed',
-      error: error.message 
-    });
-  }
-});
-
 // Enhanced health check with allowlist status
 app.get('/api/health', async (req, res) => {
   try {
@@ -1068,7 +1101,7 @@ app.get('/api/health', async (req, res) => {
     const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
     
     res.json({ 
-      status: 'SoulSync AI Backend with Complete Allowlist System running! ✅',
+      status: 'SoulSync AI Backend - COMPLETE FINAL VERSION ✅',
       database_connected: true,
       database_time: dbTest.rows[0].now,
       allowlist_users: allowlistCount.rows[0].count,
@@ -1086,7 +1119,8 @@ app.get('/api/health', async (req, res) => {
         'Family values analysis ✅',
         'Progressive relationship building ✅',
         'Admin management system ✅',
-        'Enhanced debugging and error handling ✅'
+        'Database schema fix endpoint ✅',
+        'ALL ENDPOINTS INCLUDED ✅'
       ]
     });
   } catch (error) {
@@ -1106,7 +1140,7 @@ app.get('/api/health', async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🧠 SoulSync AI Backend with Enhanced Phone Verification running on port ${PORT}`);
-  console.log('Phase 1 Features: Enhanced debugging, better error handling, comprehensive logging');
-  console.log('🔧 Debug endpoints: /api/test-db, /api/health, /api/admin/allowlist-status/soulsync_admin_2025');
+  console.log(`🧠 SoulSync AI Backend - COMPLETE FINAL VERSION running on port ${PORT}`);
+  console.log('✅ ALL FEATURES INCLUDED: Phone system, personality detection, memory, admin tools, schema fix');
+  console.log('🔧 Ready for Phase 1 testing and Phase 2 development');
 });
