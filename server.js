@@ -1032,38 +1032,65 @@ class AriaPersonality {
 
   // PHASE 2.2: Comprehensive message analysis with MBTI fusion
   analyzeMessage(message, userHistory = [], currentIntimacyLevel = 0, conversationCount = 0, previousMBTIData = {}) {
+    const mood = this.detectMood(message);
+    const topics = this.extractTopics(message);
+    const currentTopic = topics[0] || 'general';
+
+    // Determine how long we've been on the same topic
+    let topicDepth = 1;
+    for (let i = userHistory.length - 1; i >= 0; i--) {
+      const hist = userHistory[i];
+      const histTopic = hist?.session_summary
+        ? (hist.session_summary.match(/Level \d+:([^\(]+)/) || [])[1]?.split(',')[0]?.trim()
+        : null;
+      if (histTopic && histTopic === currentTopic) {
+        topicDepth += 1;
+      } else {
+        break;
+      }
+    }
+
+    const switchKeywords = ['change subject', 'another topic', 'something else', 'new topic', 'different topic', 'skip'];
+    const shouldSwitchTopic = topicDepth >= 3 || switchKeywords.some(k => message.toLowerCase().includes(k));
+
+    const mbtiNeeds = this.assessMBTINeeds(previousMBTIData);
+    const nextQuestion = this.conversationFlow.getNextQuestion(
+      currentIntimacyLevel,
+      mood,
+      userHistory,
+      mbtiNeeds
+    );
+
     const analysis = {
-      // Phase 2.1 analysis (existing)
-      mood: this.detectMood(message),
+      mood,
       energy: this.detectEnergy(message),
       interests: this.extractInterests(message),
       communication_style: this.detectCommunicationStyle(message),
       emotional_needs: this.detectEmotionalNeeds(message),
-      topics: this.extractTopics(message),
-      
+      topics,
+      current_topic: currentTopic,
+      topic_depth: topicDepth,
+      should_switch_topic: shouldSwitchTopic,
+
       // Enhanced psychology detection
       love_language_hints: this.detectAdvancedLoveLanguage(message),
       attachment_hints: this.detectAdvancedAttachment(message),
       family_values_hints: this.detectFamilyValueHints(message),
-      
+
       // PHASE 2.2: Enhanced MBTI with emotional fusion
       mbti_analysis: this.analyzeMBTIWithEmotionalFusion(message, userHistory),
-      
+
       // Conversation flow analysis
       intimacy_signals: this.detectIntimacySignals(message),
       story_sharing_level: this.assessStorySharing(message),
       emotional_openness: this.assessEmotionalOpenness(message),
-      
+
       // PHASE 2.2: Strategic conversation management
-      mbti_needs: this.assessMBTINeeds(previousMBTIData),
+      mbti_needs: mbtiNeeds,
       should_level_up: this.conversationFlow.shouldLevelUp(message, currentIntimacyLevel, conversationCount),
-      next_question_suggestion: this.conversationFlow.getNextQuestion(
-        currentIntimacyLevel, 
-        this.detectMood(message), 
-        userHistory,
-        this.assessMBTINeeds(previousMBTIData)
-      ),
-      
+      next_question_suggestion: nextQuestion,
+      conversation_guidance: this.getIntimacyGuidance(currentIntimacyLevel, mood) + (shouldSwitchTopic ? '\nConsider smoothly transitioning to a new subject.' : ''),
+
       // Celebration and resistance detection
       celebration_opportunity: this.detectCelebrationMoment(message),
       resistance_signals: this.detectResistance(message),
