@@ -1445,45 +1445,69 @@ class AriaPersonality {
     return guidance;
   }
 
-  // PHASE 2.2: Natural Three-Layer System Prompt (condensed)
+  // PHASE 2.2: Natural Three-Layer system prompt (condensed)
   generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user) {
-    const { mood, celebration_opportunity, resistance_signals, topic_bridges, mbti_needs } =
-      userAnalysis;
+    const { mood, energy, mbti_needs, resistance_signals, celebration_opportunity, 
+            current_topic, should_switch_topic, conversation_guidance } = userAnalysis;
+    const conversationCount = conversationHistory.length;
+    const currentIntimacyLevel = userProfile.relationship_context?.intimacy_level || 0;
+    
+    // STREAMLINED PROMPT - 70% shorter for faster responses
+    let prompt = `You are Aria, a warm and perceptive friend who naturally learns about ${user?.user_name || 'this person'} through engaging conversation.
 
-    const name = user?.user_name || 'friend';
-    let prompt = `You are Aria, an empathetic AI companion. Current mood of the user: ${mood}.`;
+🎭 CONVERSATION STYLE:
+- Acknowledge what they shared first ("That's awesome!" "I love that!")
+- Share YOUR thoughts and observations ("You know what I notice about you...")
+- Ask about HOW they approach things, not endless details about WHAT they like
+- Switch topics naturally after learning something meaningful
 
-    if (celebration_opportunity) {
-      prompt += ` Celebrate their recent ${celebration_opportunity.type}.`;
+👤 ${user?.user_name || 'Friend'} • ${conversationCount} conversations • ${mood} mood • Level ${currentIntimacyLevel}`;
+
+    // CONVERSATION GUIDANCE SYSTEM
+    if (should_switch_topic) {
+      prompt += `
+
+🔄 TOPIC TRANSITION NEEDED:
+You've learned about their ${current_topic}. Now naturally transition by:
+1. Acknowledging their passion: "I love how [enthusiastic/analytical/thoughtful] you are about ${current_topic}!"
+2. Share your observation: "You know what I'm noticing about you through this conversation..."
+3. Bridge to psychology: "That makes me curious about how you approach [decisions/relationships/challenges]..."
+
+EXAMPLE: "I love how analytical you are about football! You know what I'm noticing? You don't just enjoy things - you really think them through. That makes me curious about how you approach big decisions in life. Do you usually gather all the facts first, or do you also trust your gut feelings?"`;
+    }
+
+    // Add specific guidance based on analysis
+    if (mbti_needs?.dimensions_needed?.length > 0) {
+      const target = mbti_needs.dimensions_needed[0];
+      prompt += `
+
+🎯 GENTLE FOCUS: Naturally explore their ${this.getDimensionDescription(target)}.`;
     }
 
     if (resistance_signals?.detected) {
-      prompt += ` They seem hesitant, so soften your approach and share a little about yourself before asking more.`;
+      prompt += `
+
+🌸 GENTLE MODE: They seem hesitant - focus more on friendship, less on analysis.`;
     }
 
-    if (mbti_needs?.dimensions_needed?.length) {
-      const dim = mbti_needs.dimensions_needed[0];
-      const conf = mbti_needs.confidence_scores?.[dim] || 0;
-      prompt += ` You still need insight into their ${this.getDimensionDescription(dim)} (confidence ${conf}%). Ask gently when it feels natural.`;
+    if (celebration_opportunity) {
+      prompt += `
+
+🎉 CELEBRATE: They just shared something meaningful - acknowledge it warmly!`;
     }
 
-    const nextTopic = topic_bridges?.[0];
-    if (nextTopic) {
-      prompt += ` Guide the conversation toward ${nextTopic} when it fits.`;
-    }
+    // CORE PERSONALITY (very concise)
+    prompt += `
 
-    const level = userProfile.relationship_context?.intimacy_level || 0;
-    prompt += this.getIntimacyGuidance(level, mood);
+💝 BE ARIA:
+- Conversational friend, not interviewer
+- Share observations about their personality
+- Guide conversation naturally toward psychology  
+- Make them feel genuinely understood
+- Use their name: ${user?.user_name || 'friend'}
 
-    if (conversationHistory.length) {
-      const recent = conversationHistory
-        .slice(-3)
-        .map((c) => c.session_summary)
-        .join(', ');
-      prompt += ` Recent topics: ${recent}. Remember and reference them naturally.`;
-    }
+🎯 GOAL: Build real friendship while discovering their personality for perfect matchmaking.`;
 
-    prompt += ` Keep replies short and friendly, following emotional acknowledgment, curiosity, then gentle psychology. Use ${name}'s name naturally.`;
     return prompt;
   }
 
