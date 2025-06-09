@@ -1791,6 +1791,97 @@ class AriaPersonality {
     
     return null;
   }
+
+  // TOPIC IDENTIFICATION SYSTEM
+  identifyCurrentTopic(message, userHistory = []) {
+    const msg = message.toLowerCase();
+
+    // Check current message for topic keywords
+    const topicMap = {
+      'sports': ['football', 'madrid', 'sport', 'team', 'game', 'player', 'match', 'jersey'],
+      'work': ['work', 'job', 'career', 'office', 'business', 'professional', 'colleague'],
+      'entertainment': ['movie', 'show', 'film', 'series', 'netflix', 'watch', 'tv'],
+      'food': ['food', 'cooking', 'restaurant', 'meal', 'eat', 'recipe', 'dish'],
+      'relationships': ['family', 'parents', 'relationship', 'friend', 'dating', 'love'],
+      'lifestyle': ['weekend', 'hobby', 'free time', 'leisure', 'travel', 'vacation'],
+      'technology': ['computer', 'phone', 'app', 'software', 'tech', 'digital'],
+      'fitness': ['gym', 'workout', 'exercise', 'fitness', 'health', 'training']
+    };
+
+    // Find matching topics
+    for (const [topic, keywords] of Object.entries(topicMap)) {
+      if (keywords.some(keyword => msg.includes(keyword))) {
+        return topic;
+      }
+    }
+
+    // Check recent conversation history for context
+    if (userHistory.length > 0) {
+      const recentMessages = userHistory.slice(-2).map(h => h.content || '').join(' ').toLowerCase();
+      for (const [topic, keywords] of Object.entries(topicMap)) {
+        if (keywords.some(keyword => recentMessages.includes(keyword))) {
+          return topic;
+        }
+      }
+    }
+
+    return 'general';
+  }
+
+  // TOPIC DEPTH CALCULATOR
+  calculateTopicDepth(currentTopic, userHistory) {
+    if (!currentTopic || currentTopic === 'general') return 0;
+
+    // Count how many recent exchanges focused on this topic
+    const recentHistory = userHistory.slice(-6); // Last 3 exchanges (6 messages)
+    let topicCount = 0;
+
+    recentHistory.forEach(entry => {
+      const content = (entry.content || '').toLowerCase();
+      const entryTopic = this.identifyCurrentTopic(content, []);
+      if (entryTopic === currentTopic) {
+        topicCount++;
+      }
+    });
+
+    return Math.ceil(topicCount / 2); // Convert to exchange count
+  }
+
+  // TOPIC TRANSITION GENERATOR
+  generateTopicTransition(currentTopic, analysis) {
+    // Select transition based on MBTI needs
+    if (analysis.mbti_needs?.priority_dimension) {
+      const dimension = analysis.mbti_needs.priority_dimension;
+
+      if (dimension === 'E_I') {
+        return `I love how you light up talking about ${currentTopic}! That energy tells me something about you. When you need to recharge after a long day, do you prefer being around people or having some quiet time to yourself?`;
+      }
+      if (dimension === 'S_N') {
+        return `You're clearly passionate about ${currentTopic}! I'm curious about how your mind works - when you're learning about something new, do you prefer getting concrete examples and facts, or do you like exploring the big picture and possibilities?`;
+      }
+      if (dimension === 'T_F') {
+        return `It's awesome hearing about ${currentTopic}! You know what I'm noticing? You have strong opinions about things you care about. When you're making important decisions, do you usually go with logical analysis or what feels right in your heart?`;
+      }
+      if (dimension === 'J_P') {
+        return `I love your enthusiasm for ${currentTopic}! That tells me you're someone who really invests in things. I'm curious - are you usually someone who likes to plan things out in advance, or do you prefer keeping your options open?`;
+      }
+    }
+
+    // Default transition
+    return `I love how passionate you are about ${currentTopic}! You know what I'm noticing about you? You have this really thoughtful energy. That makes me curious about how you approach other areas of your life...`;
+  }
+
+  // RESISTANCE RESPONSE GENERATOR
+  generateResistanceResponse(analysis) {
+    const gentleResponses = [
+      "You know what? I love just getting to know you as a person. Tell me something that made you smile recently.",
+      "I'm really enjoying our conversation! What's something you're looking forward to this week?",
+      "You seem like such a thoughtful person. What's been on your mind lately?",
+      "I feel like I'm getting to know the real you, which is awesome. What's something you're passionate about these days?"
+    ];
+
+    return gentleResponses[Math.floor(Math.random() * gentleResponses.length)];
+  }
 }
 
 // Enhanced database helper functions (keeping existing functionality)
