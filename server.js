@@ -1079,13 +1079,30 @@ class AriaPersonality {
       conversationGuidance = 'continue_exploration';
     }
 
+    // NEW: Couple Compass progression detection
+    const progressionTrigger = this.assessProgressionReadiness({
+      mbtiScores: previousMBTIData.mbti_confidence_scores || {},
+      conversationCount: conversationCount,
+      intimacyLevel: currentIntimacyLevel,
+      resistanceCount: previousMBTIData.resistance_count || 0,
+      userMessage: message,
+      userHistory: userHistory
+    });
+
     return {
       ...baseAnalysis,
+      // Topic Director additions
       current_topic: currentTopic,
       topic_depth: topicDepth,
       should_switch_topic: shouldSwitch,
       conversation_guidance: conversationGuidance,
-      next_question_suggestion: nextQuestion
+      next_question_suggestion: nextQuestion,
+
+      // NEW: Couple Compass progression fields
+      progression_ready: progressionTrigger.ready,
+      progression_path: progressionTrigger.path,
+      transition_suggestion: progressionTrigger.suggestion,
+      trigger_reason: progressionTrigger.reason
     };
   }
 
@@ -1537,6 +1554,19 @@ EXAMPLE: "I love how analytical you are about football! You know what I'm notici
 🎉 CELEBRATE: They just shared something meaningful - acknowledge it warmly!`;
     }
 
+    // NEW: Couple Compass progression guidance
+    if (userAnalysis.progression_ready) {
+      prompt += `
+
+🧭 COUPLE COMPASS TRANSITION READY:
+Path: ${userAnalysis.progression_path}
+Reason: ${userAnalysis.trigger_reason}
+
+NATURAL TRANSITION: ${userAnalysis.transition_suggestion}
+
+APPROACH: Use this as a natural bridge to suggest the Couple Compass experience. Keep it warm and curious, not pushy. Reference their psychology insights, then suggest exploring life compatibility.`;
+    }
+
     // CORE PERSONALITY (very concise)
     prompt += `
 
@@ -1936,6 +1966,143 @@ EXAMPLE: "I love how analytical you are about football! You know what I'm notici
 
     return gentleResponses[Math.floor(Math.random() * gentleResponses.length)];
   }
+
+  // ============================================================================
+  // COUPLE COMPASS PROGRESSION DETECTION SYSTEM
+  // ============================================================================
+
+  // Main progression readiness assessment
+  assessProgressionReadiness(data) {
+    const { mbtiScores, conversationCount, intimacyLevel, resistanceCount, userMessage, userHistory } = data;
+
+    // Path 1: Psychology Success Route (80% of users)
+    const psychologyComplete = this.assessMBTICompleteness(mbtiScores);
+    const trustBuilt = intimacyLevel >= 3 && conversationCount >= 10;
+
+    if (psychologyComplete.ready && trustBuilt) {
+      return {
+        ready: true,
+        path: 'psychology_success',
+        reason: 'MBTI confidence high + trust established',
+        suggestion: this.generateTransitionSuggestion('success', psychologyComplete)
+      };
+    }
+
+    // Path 2: Psychology Stuck/Resistance Route (15% of users)
+    const psychologyStuck = resistanceCount >= 3 || (conversationCount >= 15 && !psychologyComplete.ready);
+
+    if (psychologyStuck && conversationCount >= 12) {
+      return {
+        ready: true,
+        path: 'psychology_stuck',
+        reason: 'Psychology discovery stuck, pivot to values',
+        suggestion: this.generateTransitionSuggestion('stuck', { resistanceCount })
+      };
+    }
+
+    // Path 3: Direct Interest Route (5% of users)
+    const directInterest = this.detectDirectInterest(userMessage, userHistory);
+
+    if (directInterest.detected) {
+      return {
+        ready: true,
+        path: 'direct_interest',
+        reason: 'User expressed interest in relationship/future topics',
+        suggestion: this.generateTransitionSuggestion('interest', directInterest)
+      };
+    }
+
+    // Not ready yet
+    return {
+      ready: false,
+      path: 'continue_discovery',
+      reason: 'Continue building psychology foundation',
+      suggestion: null
+    };
+  }
+
+  // Assess MBTI discovery completeness with flexible thresholds
+  assessMBTICompleteness(mbtiScores) {
+    if (!mbtiScores || Object.keys(mbtiScores).length === 0) {
+      return { ready: false, highConfidenceDimensions: 0, averageConfidence: 0 };
+    }
+
+    const scores = Object.values(mbtiScores);
+    const averageConfidence = scores.reduce((sum, score) => sum + (score || 0), 0) / scores.length;
+    const highConfidenceDimensions = scores.filter(score => (score || 0) >= 75).length;
+
+    // Ready if 3+ dimensions have high confidence OR average is very high
+    const ready = highConfidenceDimensions >= 3 || averageConfidence >= 80;
+
+    return {
+      ready,
+      highConfidenceDimensions,
+      averageConfidence: Math.round(averageConfidence),
+      completionLevel: highConfidenceDimensions >= 4 ? 'complete' :
+                      highConfidenceDimensions >= 2 ? 'good' : 'building'
+    };
+  }
+
+  // Detect direct interest in relationship/future topics with comprehensive keywords
+  detectDirectInterest(message, userHistory = []) {
+    const msg = message.toLowerCase();
+
+    // Comprehensive relationship/future keywords
+    const relationshipKeywords = [
+      'future', 'marriage', 'relationship', 'compatibility', 'partner',
+      'family planning', 'life together', 'settle down', 'serious relationship',
+      'long term', 'commitment', 'values', 'life goals', 'future plans',
+      'couple compass', 'compatibility quiz', 'relationship test',
+      'matchmaking service', 'compatibility questionnaire', 'ready for love',
+      'looking for someone', 'ideal partner', 'relationship values',
+      'what i want in', 'future together', 'building a life'
+    ];
+
+    const matchedKeywords = relationshipKeywords.filter(keyword => msg.includes(keyword));
+
+    // Direct questions about compatibility
+    const directQuestions = [
+      'what makes relationships work', 'how do you know compatibility',
+      'what do you look for', 'ideal relationship', 'relationship values',
+      'ready for something serious', 'looking for long term',
+      'what matters in love', 'relationship goals', 'perfect match'
+    ];
+
+    const directQuestionDetected = directQuestions.some(question => msg.includes(question));
+
+    // Also check recent conversation history
+    const historyKeywords = userHistory.slice(-3).some(entry => {
+      if (entry.role !== 'user') return false;
+      const content = (entry.content || '').toLowerCase();
+      return relationshipKeywords.some(keyword => content.includes(keyword));
+    });
+
+    return {
+      detected: matchedKeywords.length > 0 || directQuestionDetected || historyKeywords,
+      keywords: matchedKeywords,
+      directQuestion: directQuestionDetected,
+      fromHistory: historyKeywords,
+      strength: matchedKeywords.length > 1 ? 'strong' : 'medium'
+    };
+  }
+
+  // Generate natural transition suggestions based on progression path
+  generateTransitionSuggestion(path, context) {
+    switch (path) {
+      case 'success':
+        return `You know what I'm noticing about you through our conversations? You have this really thoughtful way of looking at life and relationships. I feel like I understand your personality pretty well now - you're ${context.completionLevel} on the psychology side! I'm curious about something different... want to explore how you see your future unfolding? I have something fun called Couple Compass 🧭`;
+
+      case 'stuck':
+        return `I love our conversations! You're clearly someone who thinks deeply about things. You know what I'm really curious about now? Not so much the psychology stuff, but your vision for the future - how you want to live, love, and build a life with someone. Want to explore that with me? 💭`;
+
+      case 'interest':
+        const keywordText = context.keywords.length > 0 ? context.keywords.join(' and ') : 'relationship topics';
+        return `That's exactly what I was hoping we'd explore! I love that you're thinking about ${keywordText}. Want to dive into that together? I have this thing called Couple Compass that's perfect for exploring exactly these kinds of life questions... 🧭`;
+
+      default:
+        return `I'm sensing you might be ready to explore some deeper life questions. Interested in talking about how you see your future? ✨`;
+    }
+  }
 }
 
 // Enhanced database helper functions (keeping existing functionality)
@@ -2093,6 +2260,14 @@ app.post('/api/chat', async (req, res) => {
       console.log('🎉 Celebration Opportunity:', !!analysis.celebration_opportunity);
       console.log('⚠️ Resistance Detected:', !!analysis.resistance_signals?.detected);
       console.log('🔄 Natural Flow Active:', 'THREE-LAYER RESPONSE STRUCTURE');
+      console.log('🧭 Progression Ready:', analysis.progression_ready);
+      console.log('🛤️ Progression Path:', analysis.progression_path || 'continue_discovery');
+      console.log('📝 Trigger Reason:', analysis.trigger_reason || 'building foundation');
+      if (analysis.transition_suggestion) {
+        console.log('💬 Transition Available:', 'YES');
+      } else {
+        console.log('💬 Transition Available:', 'NO');
+      }
       console.log('=======================================');
       
       // PHASE 2.2: Enhanced user profile updates with natural conversation tracking
@@ -2236,6 +2411,16 @@ app.post('/api/chat', async (req, res) => {
           // PHASE 2.2: Natural Conversation System insights
           naturalConversationActive: true,
           threeLayerSystemWorking: true,
+          // NEW: Couple Compass progression insights
+          progressionReady: analysis.progression_ready,
+          progressionPath: analysis.progression_path,
+          transitionSuggestion: analysis.transition_suggestion,
+          triggerReason: analysis.trigger_reason,
+          progressionSystem: {
+            active: true,
+            pathsDetected: ['psychology_success', 'psychology_stuck', 'direct_interest'],
+            currentStatus: analysis.progression_ready ? 'ready_for_transition' : 'building_foundation'
+          },
           mbtiConfidenceScores: updatedProfile.mbti_confidence_scores || {},
           mbtiAnalysis: analysis.mbti_analysis,
           dimensionsNeeded: analysis.mbti_needs?.dimensions_needed || [],
