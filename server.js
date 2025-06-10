@@ -2055,7 +2055,8 @@ APPROACH: Use this as a natural bridge to suggest the Couple Compass experience.
       'couple compass', 'compatibility quiz', 'relationship test',
       'matchmaking service', 'compatibility questionnaire', 'ready for love',
       'looking for someone', 'ideal partner', 'relationship values',
-      'what i want in', 'future together', 'building a life'
+      'what i want in', 'future together', 'building a life',
+      'compatible', 'good match', 'right person', 'soulmate', 'the one'
     ];
 
     const matchedKeywords = relationshipKeywords.filter(keyword => msg.includes(keyword));
@@ -2065,7 +2066,9 @@ APPROACH: Use this as a natural bridge to suggest the Couple Compass experience.
       'what makes relationships work', 'how do you know compatibility',
       'what do you look for', 'ideal relationship', 'relationship values',
       'ready for something serious', 'looking for long term',
-      'what matters in love', 'relationship goals', 'perfect match'
+      'what matters in love', 'relationship goals', 'perfect match',
+      'how do you know when', 'when someone is compatible',
+      'what makes someone compatible', 'how to know if'
     ];
 
     const directQuestionDetected = directQuestions.some(question => msg.includes(question));
