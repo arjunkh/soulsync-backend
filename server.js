@@ -1447,13 +1447,25 @@ class AriaPersonality {
 
   // PHASE 2.2: Natural Three-Layer system prompt (condensed)
   generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user) {
-    const { mood, energy, mbti_needs, resistance_signals, celebration_opportunity, 
-            current_topic, should_switch_topic, conversation_guidance } = userAnalysis;
+    const {
+      mood,
+      energy,
+      mbti_needs,
+      resistance_signals,
+      celebration_opportunity,
+      current_topic,
+      should_switch_topic,
+      conversation_guidance,
+    } = userAnalysis;
     const conversationCount = conversationHistory.length;
-    const currentIntimacyLevel = userProfile.relationship_context?.intimacy_level || 0;
-    
+    const currentIntimacyLevel =
+      userProfile.relationship_context?.intimacy_level || 0;
+    const personalityData = userProfile.personality_data || {};
+
     // STREAMLINED PROMPT - 70% shorter for faster responses
-    let prompt = `You are Aria, a warm and perceptive friend who naturally learns about ${user?.user_name || 'this person'} through engaging conversation.
+    let prompt = `You are Aria, a warm and perceptive friend who naturally learns about ${
+      user?.user_name || 'this person'
+    } through engaging conversation.
 
 🎭 CONVERSATION STYLE:
 - Acknowledge what they shared first ("That's awesome!" "I love that!")
@@ -1462,6 +1474,35 @@ class AriaPersonality {
 - Switch topics naturally after learning something meaningful
 
 👤 ${user?.user_name || 'Friend'} • ${conversationCount} conversations • ${mood} mood • Level ${currentIntimacyLevel}`;
+
+    // MEMORY SECTION
+    const memory = [];
+    if (Array.isArray(personalityData.interests) && personalityData.interests.length > 0) {
+      memory.push(`Interests: ${personalityData.interests.join(', ')}`);
+    }
+    if (personalityData.communication_patterns && Object.keys(personalityData.communication_patterns).length > 0) {
+      memory.push(`Communication: ${Object.values(personalityData.communication_patterns).join(', ')}`);
+    }
+    if (personalityData.emotional_patterns && Object.keys(personalityData.emotional_patterns).length > 0) {
+      memory.push(`Emotional traits: ${Object.values(personalityData.emotional_patterns).join(', ')}`);
+    }
+    if (Array.isArray(personalityData.love_language_hints) && personalityData.love_language_hints.length > 0) {
+      memory.push(`Love language: ${personalityData.love_language_hints.join(', ')}`);
+    }
+    if (Array.isArray(personalityData.attachment_hints) && personalityData.attachment_hints.length > 0) {
+      memory.push(`Attachment: ${personalityData.attachment_hints.join(', ')}`);
+    }
+    if (Array.isArray(personalityData.family_values_hints) && personalityData.family_values_hints.length > 0) {
+      memory.push(`Values: ${personalityData.family_values_hints.join(', ')}`);
+    }
+
+    if (memory.length > 0) {
+      prompt += `
+
+💭 WHAT YOU KNOW ABOUT ${user?.user_name || 'them'}:
+- ${memory.join('\n- ')}
+🔗 REFERENCE THESE NATURALLY`;
+    }
 
     // CONVERSATION GUIDANCE SYSTEM
     if (should_switch_topic) {
@@ -1502,7 +1543,7 @@ EXAMPLE: "I love how analytical you are about football! You know what I'm notici
 💝 BE ARIA:
 - Conversational friend, not interviewer
 - Share observations about their personality
-- Guide conversation naturally toward psychology  
+- Guide conversation naturally toward psychology
 - Make them feel genuinely understood
 - Use their name: ${user?.user_name || 'friend'}
 
