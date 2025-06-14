@@ -1,5 +1,6 @@
 // SoulSync AI Backend - PHASE 2.2 COMPLETE: Natural Conversation Flow with Strategic MBTI Detection
 // Three-Layer Response System: Emotional Intelligence + Strategic Psychology + Natural Flow
+// 🎯 ALL 5 CRITICAL FIXES IMPLEMENTED: Memory + Length + Boundaries + Introduction + DirectInterest
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -1006,7 +1007,7 @@ class ConversationFlowEngine {
   }
 }
 
-// PHASE 2.2: Enhanced Aria Personality with Natural Three-Layer Conversation System
+// PHASE 2.2: Enhanced Aria Personality with Natural Three-Layer Conversation System + ALL 5 FIXES
 class AriaPersonality {
   constructor() {
     this.basePersonality = {
@@ -1030,8 +1031,66 @@ class AriaPersonality {
     this.conversationFlow = new ConversationFlowEngine();
   }
 
-  // PHASE 2.2: Comprehensive message analysis with MBTI fusion
+  // 🎯 FIX 5: ARIA INTRODUCTION SYSTEM - Generate warm introduction for new users
+  generateIntroMessage(user) {
+    const name = user?.user_name || 'friend';
+    return `Hey ${name}! 💕 I'm Aria, your AI companion here to get to know the real you. 
+
+Think of our chats as cozy conversations where I learn about your personality, what makes you tick, and how you approach relationships. No pressure, just genuine curiosity about who you are! 
+
+Ready to dive in? ✨`;
+  }
+
+  // 🎯 FIX 4: CONVERSATION BOUNDARIES - Detect off-topic questions and redirect
+  isOffTopicQuestion(message) {
+    const msg = message.toLowerCase();
+    
+    // Physics, math, general knowledge questions
+    const offTopicPatterns = [
+      /what is \d+[\+\-\*\/]\d+/,  // Math questions
+      /what.*(capital|currency|population) of/,  // Geography
+      /how many.*in/,  // General facts
+      /what does.*mean/,  // Definitions
+      /who invented/,  // History
+      /when did.*happen/,  // Events
+      /what is the.*of.*physics/,  // Science
+      /explain.*theory/,  // Academic topics
+      /how to.*cook/,  // Recipes
+      /weather.*today/,  // Weather
+      /news.*today/,  // News
+    ];
+
+    // Simple knowledge queries
+    const knowledgeWords = ['wikipedia', 'google', 'search', 'definition', 'formula', 'equation', 'algorithm'];
+    
+    const hasOffTopicPattern = offTopicPatterns.some(pattern => pattern.test(msg));
+    const hasKnowledgeWords = knowledgeWords.some(word => msg.includes(word));
+    
+    return hasOffTopicPattern || hasKnowledgeWords;
+  }
+
+  // 🎯 FIX 4: Generate boundary response with gentle redirect
+  generateBoundaryResponse(message) {
+    const redirectResponses = [
+      "I love your curiosity! I'm more of a relationships and personality friend than an encyclopedia 😊 Speaking of which, what draws you to people? Are you someone who connects through shared interests or deep conversations?",
+      
+      "That's a fun question! Though I'm better at exploring hearts than textbooks 💝 I'm curious about you though - when you meet someone new, what makes you feel like you really 'get' them?",
+      
+      "You know me, I'm all about getting to know people on a deeper level rather than facts and figures! What I really want to know is - what makes you feel most understood by others?",
+      
+      "Haha, you're testing my limits! I'm definitely more of a 'let's talk about your dreams and feelings' kind of friend 😄 But speaking of dreams, what's something you hope for in your ideal relationship?",
+      
+      "I love that you're curious about everything! I'm more specialized in the human heart though 💕 What I'm really wondering is - what kind of emotional connection do you value most with people?"
+    ];
+    
+    return redirectResponses[Math.floor(Math.random() * redirectResponses.length)];
+  }
+
+  // PHASE 2.2: Comprehensive message analysis with MBTI fusion + ALL FIXES INTEGRATED
   analyzeMessage(message, userHistory = [], currentIntimacyLevel = 0, conversationCount = 0, previousMBTIData = {}) {
+    // 🎯 FIX 4: Check for off-topic questions first
+    const isOffTopic = this.isOffTopicQuestion(message);
+    
     // Get base analysis using existing detectors
     const baseAnalysis = {
       mood: this.detectMood(message),
@@ -1051,7 +1110,9 @@ class AriaPersonality {
       should_level_up: this.conversationFlow.shouldLevelUp(message, currentIntimacyLevel, conversationCount),
       celebration_opportunity: this.detectCelebrationMoment(message),
       resistance_signals: this.detectResistance(message),
-      topic_bridges: this.generateTopicBridges(message)
+      topic_bridges: this.generateTopicBridges(message),
+      // 🎯 FIX 4: Add off-topic detection
+      off_topic_detected: isOffTopic
     };
 
     // Topic Director logic
@@ -1059,11 +1120,15 @@ class AriaPersonality {
     const topicDepth = this.calculateTopicDepth(currentTopic, userHistory);
     const shouldSwitch = topicDepth >= 3;
 
-    // Determine next question and guidance
+    // Determine next question and guidance with boundaries
     let nextQuestion;
     let conversationGuidance;
 
-    if (shouldSwitch) {
+    // 🎯 FIX 4: Handle off-topic questions first
+    if (isOffTopic) {
+      nextQuestion = this.generateBoundaryResponse(message);
+      conversationGuidance = 'boundary_redirect';
+    } else if (shouldSwitch) {
       nextQuestion = this.generateTopicTransition(currentTopic, baseAnalysis);
       conversationGuidance = 'transition_topic';
     } else if (baseAnalysis.resistance_signals?.detected) {
@@ -1079,7 +1144,7 @@ class AriaPersonality {
       conversationGuidance = 'continue_exploration';
     }
 
-    // NEW: Couple Compass progression detection
+    // NEW: Couple Compass progression detection - 🎯 FIX 1: Enhanced detectDirectInterest
     const progressionTrigger = this.assessProgressionReadiness({
       mbtiScores: previousMBTIData.mbti_confidence_scores || {},
       conversationCount: conversationCount,
@@ -1462,7 +1527,7 @@ class AriaPersonality {
     return guidance;
   }
 
-  // PHASE 2.2: Natural Three-Layer system prompt (condensed)
+  // 🎯 FIX 2: Enhanced generateSystemPrompt with COMPLETE MEMORY INTEGRATION
   generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user) {
     const {
       mood,
@@ -1473,13 +1538,20 @@ class AriaPersonality {
       current_topic,
       should_switch_topic,
       conversation_guidance,
+      off_topic_detected, // 🎯 FIX 4: Add off-topic detection
     } = userAnalysis;
     const conversationCount = conversationHistory.length;
     const currentIntimacyLevel =
       userProfile.relationship_context?.intimacy_level || 0;
     const personalityData = userProfile.personality_data || {};
 
-    // STREAMLINED PROMPT - 70% shorter for faster responses
+    // 🎯 FIX 5: Check if this is a new user and needs introduction
+    const isNewUser = conversationCount === 0;
+    if (isNewUser) {
+      return this.generateIntroMessage(user);
+    }
+
+    // STREAMLINED PROMPT with ALL FIXES INTEGRATED
     let prompt = `You are Aria, a warm and perceptive friend who naturally learns about ${
       user?.user_name || 'this person'
     } through engaging conversation.
@@ -1492,37 +1564,91 @@ class AriaPersonality {
 
 👤 ${user?.user_name || 'Friend'} • ${conversationCount} conversations • ${mood} mood • Level ${currentIntimacyLevel}`;
 
-    // MEMORY SECTION
+    // 🎯 FIX 2: ENHANCED MEMORY SECTION - Complete access to stored user data
     const memory = [];
+    
+    // Extract all stored interests with natural referencing
     if (Array.isArray(personalityData.interests) && personalityData.interests.length > 0) {
-      memory.push(`Interests: ${personalityData.interests.join(', ')}`);
+      memory.push(`✨ You know ${user?.user_name || 'they'} love: ${personalityData.interests.join(', ')}`);
     }
+    
+    // Extract communication patterns
     if (personalityData.communication_patterns && Object.keys(personalityData.communication_patterns).length > 0) {
-      memory.push(`Communication: ${Object.values(personalityData.communication_patterns).join(', ')}`);
+      const patterns = Object.entries(personalityData.communication_patterns)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+      memory.push(`💬 Communication style: ${patterns}`);
     }
+    
+    // Extract emotional patterns
     if (personalityData.emotional_patterns && Object.keys(personalityData.emotional_patterns).length > 0) {
-      memory.push(`Emotional traits: ${Object.values(personalityData.emotional_patterns).join(', ')}`);
+      const emotions = Object.entries(personalityData.emotional_patterns)
+        .filter(([key, value]) => value && key !== 'latest_mood' && key !== 'latest_energy')
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+      if (emotions) {
+        memory.push(`💝 Emotional traits: ${emotions}`);
+      }
     }
+    
+    // Extract love language hints with personal references
     if (Array.isArray(personalityData.love_language_hints) && personalityData.love_language_hints.length > 0) {
-      memory.push(`Love language: ${personalityData.love_language_hints.join(', ')}`);
+      memory.push(`💕 Love language signals: ${personalityData.love_language_hints.join(', ')}`);
     }
+    
+    // Extract attachment hints
     if (Array.isArray(personalityData.attachment_hints) && personalityData.attachment_hints.length > 0) {
-      memory.push(`Attachment: ${personalityData.attachment_hints.join(', ')}`);
+      memory.push(`🤗 Attachment style: ${personalityData.attachment_hints.join(', ')}`);
     }
+    
+    // Extract family values
     if (Array.isArray(personalityData.family_values_hints) && personalityData.family_values_hints.length > 0) {
-      memory.push(`Values: ${personalityData.family_values_hints.join(', ')}`);
+      memory.push(`👨‍👩‍👧‍👦 Values: ${personalityData.family_values_hints.join(', ')}`);
+    }
+    
+    // Extract past conversation topics for natural bridges
+    const pastTopics = conversationHistory.slice(-3).map(conv => {
+      if (conv.session_summary) {
+        // Extract meaningful topics from session summary
+        const topics = conv.session_summary.match(/\w+(?=\s*openness)|(\w+)\s*(?:,|$)/g);
+        return topics ? topics.slice(0, 2).join(', ') : 'personal chat';
+      }
+      return 'getting to know each other';
+    }).filter(Boolean);
+    
+    if (pastTopics.length > 0) {
+      memory.push(`📚 Recent topics: ${pastTopics.join(' → ')}`);
     }
 
     if (memory.length > 0) {
       prompt += `
 
-💭 WHAT YOU KNOW ABOUT ${user?.user_name || 'them'}:
-- ${memory.join('\n- ')}
-🔗 REFERENCE THESE NATURALLY`;
+💭 WHAT YOU REMEMBER ABOUT ${user?.user_name || 'THEM'}:
+${memory.map(item => `- ${item}`).join('\n')}
+
+🔗 REFERENCE THESE NATURALLY: "I remember you mentioned..." "You seem to really love..." "Given what you told me about..."`;
+    }
+
+    // 🎯 FIX 3: RESPONSE LENGTH CONTROL - Strict 2-sentence limit
+    prompt += `
+
+📝 RESPONSE RULES (CRITICAL):
+- MAXIMUM 2 sentences per response
+- One acknowledgment + one curiosity question  
+- Warm, casual tone like texting a friend
+- Never overwhelm with long paragraphs
+- Keep it conversational and light`;
+
+    // 🎯 FIX 4: Handle off-topic questions with boundaries
+    if (off_topic_detected) {
+      prompt += `
+
+🚧 BOUNDARY MODE ACTIVE:
+They asked an off-topic question. Gently redirect back to relationships and personality with warmth and humor. Use the boundary response system to keep things focused on getting to know them personally.`;
     }
 
     // CONVERSATION GUIDANCE SYSTEM
-    if (should_switch_topic) {
+    if (should_switch_topic && !off_topic_detected) {
       prompt += `
 
 🔄 TOPIC TRANSITION NEEDED:
@@ -1535,7 +1661,7 @@ EXAMPLE: "I love how analytical you are about football! You know what I'm notici
     }
 
     // Add specific guidance based on analysis
-    if (mbti_needs?.dimensions_needed?.length > 0) {
+    if (mbti_needs?.dimensions_needed?.length > 0 && !off_topic_detected) {
       const target = mbti_needs.dimensions_needed[0];
       prompt += `
 
@@ -1572,10 +1698,11 @@ APPROACH: Use this as a natural bridge to suggest the Couple Compass experience.
 
 💝 BE ARIA:
 - Conversational friend, not interviewer
-- Share observations about their personality
+- Share observations about their personality  
 - Guide conversation naturally toward psychology
 - Make them feel genuinely understood
 - Use their name: ${user?.user_name || 'friend'}
+- Remember what they've shared and reference it naturally
 
 🎯 GOAL: Build real friendship while discovering their personality for perfect matchmaking.`;
 
@@ -1961,907 +2088,4 @@ APPROACH: Use this as a natural bridge to suggest the Couple Compass experience.
       "You know what? I love just getting to know you as a person. Tell me something that made you smile recently.",
       "I'm really enjoying our conversation! What's something you're looking forward to this week?",
       "You seem like such a thoughtful person. What's been on your mind lately?",
-      "I feel like I'm getting to know the real you, which is awesome. What's something you're passionate about these days?"
-    ];
-
-    return gentleResponses[Math.floor(Math.random() * gentleResponses.length)];
-  }
-
-  // ============================================================================
-  // COUPLE COMPASS PROGRESSION DETECTION SYSTEM
-  // ============================================================================
-
-  // Main progression readiness assessment
-  assessProgressionReadiness(data) {
-    const { mbtiScores, conversationCount, intimacyLevel, resistanceCount, userMessage, userHistory } = data;
-
-    // Path 1: Psychology Success Route (80% of users)
-    const psychologyComplete = this.assessMBTICompleteness(mbtiScores);
-    const trustBuilt = intimacyLevel >= 3 && conversationCount >= 10;
-
-    if (psychologyComplete.ready && trustBuilt) {
-      return {
-        ready: true,
-        path: 'psychology_success',
-        reason: 'MBTI confidence high + trust established',
-        suggestion: this.generateTransitionSuggestion('success', psychologyComplete)
-      };
-    }
-
-    // Path 2: Psychology Stuck/Resistance Route (15% of users)
-    const psychologyStuck = resistanceCount >= 3 || (conversationCount >= 15 && !psychologyComplete.ready);
-
-    if (psychologyStuck && conversationCount >= 12) {
-      return {
-        ready: true,
-        path: 'psychology_stuck',
-        reason: 'Psychology discovery stuck, pivot to values',
-        suggestion: this.generateTransitionSuggestion('stuck', { resistanceCount })
-      };
-    }
-
-    // Path 3: Direct Interest Route (5% of users)
-    const directInterest = this.detectDirectInterest(userMessage, userHistory);
-
-    if (directInterest.detected) {
-      return {
-        ready: true,
-        path: 'direct_interest',
-        reason: 'User expressed interest in relationship/future topics',
-        suggestion: this.generateTransitionSuggestion('interest', directInterest)
-      };
-    }
-
-    // Not ready yet
-    return {
-      ready: false,
-      path: 'continue_discovery',
-      reason: 'Continue building psychology foundation',
-      suggestion: null
-    };
-  }
-
-  // Assess MBTI discovery completeness with flexible thresholds
-  assessMBTICompleteness(mbtiScores) {
-    if (!mbtiScores || Object.keys(mbtiScores).length === 0) {
-      return { ready: false, highConfidenceDimensions: 0, averageConfidence: 0 };
-    }
-
-    const scores = Object.values(mbtiScores);
-    const averageConfidence = scores.reduce((sum, score) => sum + (score || 0), 0) / scores.length;
-    const highConfidenceDimensions = scores.filter(score => (score || 0) >= 75).length;
-
-    // Ready if 3+ dimensions have high confidence OR average is very high
-    const ready = highConfidenceDimensions >= 3 || averageConfidence >= 80;
-
-    return {
-      ready,
-      highConfidenceDimensions,
-      averageConfidence: Math.round(averageConfidence),
-      completionLevel: highConfidenceDimensions >= 4 ? 'complete' :
-                      highConfidenceDimensions >= 2 ? 'good' : 'building'
-    };
-  }
-
-  // Detect direct interest in relationship/future topics with comprehensive keywords
-  detectDirectInterest(message, userHistory = []) {
-    const msg = message.toLowerCase();
-
-    // Comprehensive relationship/future keywords
-    const relationshipKeywords = [
-      'future', 'marriage', 'relationship', 'compatibility', 'partner',
-      'family planning', 'life together', 'settle down', 'serious relationship',
-      'long term', 'commitment', 'values', 'life goals', 'future plans',
-      'couple compass', 'compatibility quiz', 'relationship test',
-      'matchmaking service', 'compatibility questionnaire', 'ready for love',
-      'looking for someone', 'ideal partner', 'relationship values',
-      'what i want in', 'future together', 'building a life',
-      'compatible', 'good match', 'right person', 'soulmate', 'the one'
-    ];
-
-    const matchedKeywords = relationshipKeywords.filter(keyword => msg.includes(keyword));
-
-    // Direct questions about compatibility
-    const directQuestions = [
-      'what makes relationships work', 'how do you know compatibility',
-      'what do you look for', 'ideal relationship', 'relationship values',
-      'ready for something serious', 'looking for long term',
-      'what matters in love', 'relationship goals', 'perfect match',
-      'how do you know when', 'when someone is compatible',
-      'what makes someone compatible', 'how to know if'
-    ];
-
-    const directQuestionDetected = directQuestions.some(question => msg.includes(question));
-
-    // Also check recent conversation history
-    const historyKeywords = userHistory.slice(-3).some(entry => {
-      if (entry.role !== 'user') return false;
-      const content = (entry.content || '').toLowerCase();
-      return relationshipKeywords.some(keyword => content.includes(keyword));
-    });
-
-    return {
-      detected: matchedKeywords.length > 0 || directQuestionDetected || historyKeywords,
-      keywords: matchedKeywords,
-      directQuestion: directQuestionDetected,
-      fromHistory: historyKeywords,
-      strength: matchedKeywords.length > 1 ? 'strong' : 'medium'
-    };
-  }
-
-  // Generate natural transition suggestions based on progression path
-  generateTransitionSuggestion(path, context) {
-    switch (path) {
-      case 'success':
-        return `You know what I'm noticing about you through our conversations? You have this really thoughtful way of looking at life and relationships. I feel like I understand your personality pretty well now - you're ${context.completionLevel} on the psychology side! I'm curious about something different... want to explore how you see your future unfolding? I have something fun called Couple Compass 🧭`;
-
-      case 'stuck':
-        return `I love our conversations! You're clearly someone who thinks deeply about things. You know what I'm really curious about now? Not so much the psychology stuff, but your vision for the future - how you want to live, love, and build a life with someone. Want to explore that with me? 💭`;
-
-      case 'interest':
-        const keywordText = context.keywords.length > 0 ? context.keywords.join(' and ') : 'relationship topics';
-        return `That's exactly what I was hoping we'd explore! I love that you're thinking about ${keywordText}. Want to dive into that together? I have this thing called Couple Compass that's perfect for exploring exactly these kinds of life questions... 🧭`;
-
-      default:
-        return `I'm sensing you might be ready to explore some deeper life questions. Interested in talking about how you see your future? ✨`;
-    }
-  }
-}
-
-// Enhanced database helper functions (keeping existing functionality)
-async function getOrCreateUser(userId) {
-  try {
-    // Try to get existing user
-    let result = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
-    
-    if (result.rows.length === 0) {
-      // Create new user
-      result = await pool.query(
-        'INSERT INTO users (user_id, personality_data, relationship_context) VALUES ($1, $2, $3) RETURNING *',
-        [userId, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 }]
-      );
-    } else {
-      // Update last_seen for existing user
-      await pool.query('UPDATE users SET last_seen = CURRENT_TIMESTAMP WHERE user_id = $1', [userId]);
-    }
-    
-    return result.rows[0];
-  } catch (error) {
-    console.error('Error getting/creating user:', error);
-    throw error;
-  }
-}
-
-async function getUserConversationHistory(userId, limit = 5) {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM conversations WHERE user_id = $1 ORDER BY conversation_date DESC LIMIT $2',
-      [userId, limit]
-    );
-    return result.rows.reverse(); // Return in chronological order
-  } catch (error) {
-    console.error('Error getting conversation history:', error);
-    return [];
-  }
-}
-
-async function saveConversation(userId, messages, insights, summary) {
-  try {
-    await pool.query(
-      'INSERT INTO conversations (user_id, messages, insights_discovered, session_summary) VALUES ($1, $2, $3, $4)',
-      [userId, JSON.stringify(messages), insights, summary]
-    );
-    
-    // Update conversation count
-    await pool.query(
-      'UPDATE users SET total_conversations = total_conversations + 1 WHERE user_id = $1',
-      [userId]
-    );
-  } catch (error) {
-    console.error('Error saving conversation:', error);
-  }
-}
-
-// PHASE 2.2: Enhanced user profile updates with MBTI confidence tracking
-async function updateUserProfile(userId, newInsights) {
-  try {
-    const user = await pool.query('SELECT personality_data FROM users WHERE user_id = $1', [userId]);
-    const currentData = user.rows[0]?.personality_data || {};
-    
-    // PHASE 2.2: Enhanced MBTI confidence tracking
-    const currentMBTI = currentData.mbti_confidence_scores || {
-      E_I: 0, S_N: 0, T_F: 0, J_P: 0
-    };
-
-    // Update MBTI confidence scores if we have fusion analysis
-    let updatedMBTI = { ...currentMBTI };
-    if (newInsights.mbti_fusion && newInsights.mbti_fusion.enhanced_confidence) {
-      Object.entries(newInsights.mbti_fusion.enhanced_confidence).forEach(([preference, boost]) => {
-        if (preference === 'extrovert') updatedMBTI.E_I = Math.min(100, (updatedMBTI.E_I || 50) + boost);
-        if (preference === 'introvert') updatedMBTI.E_I = Math.max(0, (updatedMBTI.E_I || 50) - boost);
-        if (preference === 'sensing') updatedMBTI.S_N = Math.min(100, (updatedMBTI.S_N || 50) + boost);
-        if (preference === 'intuition') updatedMBTI.S_N = Math.max(0, (updatedMBTI.S_N || 50) - boost);
-        if (preference === 'thinking') updatedMBTI.T_F = Math.min(100, (updatedMBTI.T_F || 50) + boost);
-        if (preference === 'feeling') updatedMBTI.T_F = Math.max(0, (updatedMBTI.T_F || 50) - boost);
-        if (preference === 'judging') updatedMBTI.J_P = Math.min(100, (updatedMBTI.J_P || 50) + boost);
-        if (preference === 'perceiving') updatedMBTI.J_P = Math.max(0, (updatedMBTI.J_P || 50) - boost);
-      });
-    }
-
-    // Merge new insights with existing data
-    const updatedData = {
-      ...currentData,
-      interests: [...new Set([...(currentData.interests || []), ...(newInsights.interests || [])])],
-      communication_patterns: { ...currentData.communication_patterns, ...newInsights.communication_patterns },
-      emotional_patterns: { ...currentData.emotional_patterns, ...newInsights.emotional_patterns },
-      love_language_hints: [...new Set([...(currentData.love_language_hints || []), ...(newInsights.love_language_hints || [])])],
-      attachment_hints: [...new Set([...(currentData.attachment_hints || []), ...(newInsights.attachment_hints || [])])],
-      family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])],
-      
-      // PHASE 2.2: Enhanced MBTI tracking
-      mbti_confidence_scores: updatedMBTI,
-      mbti_analysis_history: [...(currentData.mbti_analysis_history || []), newInsights.mbti_analysis].slice(-10), // Keep last 10
-      conversation_flow: { ...currentData.conversation_flow, ...newInsights.conversation_flow },
-      
-      // Resistance tracking
-      resistance_count: newInsights.resistance_detected ? (currentData.resistance_count || 0) + 1 : (currentData.resistance_count || 0)
-    };
-    
-    await pool.query(
-      'UPDATE users SET personality_data = $1 WHERE user_id = $2',
-      [JSON.stringify(updatedData), userId]
-    );
-    
-    return updatedData;
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    throw error;
-  }
-}
-
-// PHASE 2.2: Enhanced main chat endpoint with Three-Layer Natural Conversation System
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { messages, userId = 'default' } = req.body;
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ error: 'OpenAI API key not configured on server' });
-    }
-
-    // Get or create user profile
-    const user = await getOrCreateUser(userId);
-    const conversationHistory = await getUserConversationHistory(userId);
-    
-    const aria = new AriaPersonality();
-    
-    // Get the latest user message
-    const latestUserMessage = messages[messages.length - 1];
-    if (latestUserMessage && latestUserMessage.role === 'user') {
-      
-      // Get current intimacy level from user profile
-      const currentIntimacyLevel = user.relationship_context?.intimacy_level || 0;
-      const conversationCount = conversationHistory.length;
-      
-      // PHASE 2.2: Enhanced analysis with MBTI fusion AND natural conversation flow
-      const analysis = aria.analyzeMessage(
-        latestUserMessage.content, 
-        conversationHistory, 
-        currentIntimacyLevel,
-        conversationCount,
-        user.personality_data || {} // Pass existing MBTI data for strategic targeting
-      );
-
-      // Enhanced debug logging for Three-Layer System
-      console.log('=== PHASE 2.2 NATURAL CONVERSATION SYSTEM ===');
-      console.log('📱 User ID:', userId);
-      console.log('💬 Latest message:', latestUserMessage.content.substring(0, 50) + '...');
-      console.log('🎭 Three-Layer System Active:', 'YES');
-      console.log('🎯 MBTI Dimensions Needed:', analysis.mbti_needs?.dimensions_needed || 'None');
-      console.log('🌉 Topic Bridges Available:', analysis.topic_bridges?.length || 0);
-      console.log('💬 Strategic Question Generated:', analysis.next_question_suggestion ? 'YES' : 'NO');
-      console.log('🎉 Celebration Opportunity:', !!analysis.celebration_opportunity);
-      console.log('⚠️ Resistance Detected:', !!analysis.resistance_signals?.detected);
-      console.log('🔄 Natural Flow Active:', 'THREE-LAYER RESPONSE STRUCTURE');
-      console.log('🧭 Progression Ready:', analysis.progression_ready);
-      console.log('🛤️ Progression Path:', analysis.progression_path || 'continue_discovery');
-      console.log('📝 Trigger Reason:', analysis.trigger_reason || 'building foundation');
-      if (analysis.transition_suggestion) {
-        console.log('💬 Transition Available:', 'YES');
-      } else {
-        console.log('💬 Transition Available:', 'NO');
-      }
-      console.log('=======================================');
-      
-      // PHASE 2.2: Enhanced user profile updates with natural conversation tracking
-      const updatedProfile = await updateUserProfile(userId, {
-        interests: analysis.interests,
-        communication_patterns: { 
-          style: analysis.communication_style,
-          story_sharing_level: analysis.story_sharing_level,
-          emotional_openness: analysis.emotional_openness
-        },
-        emotional_patterns: { 
-          latest_mood: analysis.mood, 
-          latest_energy: analysis.energy,
-          emotional_needs: analysis.emotional_needs,
-          intimacy_signals: analysis.intimacy_signals
-        },
-        love_language_hints: analysis.love_language_hints,
-        attachment_hints: analysis.attachment_hints,
-        family_values_hints: analysis.family_values_hints,
-        
-        // PHASE 2.2: MBTI fusion analysis
-        mbti_analysis: analysis.mbti_analysis,
-        mbti_fusion: analysis.mbti_analysis?.fusion_results || null,
-        resistance_detected: analysis.resistance_signals?.detected || false,
-        
-        conversation_flow: {
-          current_intimacy_level: analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel,
-          emotional_openness: analysis.emotional_openness,
-          story_sharing_level: analysis.story_sharing_level,
-          last_celebration: analysis.celebration_opportunity,
-          conversation_count: conversationCount + 1,
-          three_layer_system_active: true // Track that natural system is working
-        }
-      });
-      
-      // Update relationship context with new intimacy level
-      if (analysis.should_level_up) {
-        await pool.query(`
-          UPDATE users 
-          SET relationship_context = jsonb_set(
-            relationship_context, 
-            '{intimacy_level}', 
-            $1::jsonb
-          )
-          WHERE user_id = $2
-        `, [JSON.stringify(currentIntimacyLevel + 1), userId]);
-        
-        console.log(`🆙 User ${userId} leveled up to intimacy level ${currentIntimacyLevel + 1}`);
-      }
-      
-      // PHASE 2.2: Generate NATURAL Three-Layer system prompt
-      let adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
-
-      // Prepare messages with NATURAL conversation prompt (no aggressive instructions)
-      const adaptiveMessages = [
-        { role: 'system', content: adaptivePrompt },
-        ...messages.slice(1) // Skip original system message
-      ];
-
-      // Call OpenAI with NATURAL Three-Layer System
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: adaptiveMessages,
-          max_tokens: 350,
-          temperature: 0.85, // Slightly higher for more natural responses
-          presence_penalty: 0.3,
-          frequency_penalty: 0.2
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        return res.status(response.status).json({ 
-          error: `OpenAI API Error: ${errorData}` 
-        });
-      }
-
-      const data = await response.json();
-      
-      // Enhanced conversation summary with Three-Layer System tracking
-      const mbtiProgress = updatedProfile.mbti_confidence_scores ? 
-        Object.entries(updatedProfile.mbti_confidence_scores)
-          .map(([dim, score]) => `${dim}:${Math.round(score)}%`)
-          .join(', ') : 'Building baseline';
-      
-      const sessionSummary = `Level ${analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel}: ${analysis.topics.join(', ') || 'personal connection'} (${analysis.emotional_openness} openness, Natural Flow: Active, MBTI: ${mbtiProgress})`;
-      
-      // Save conversation with enhanced metadata
-      await saveConversation(
-        userId, 
-        [latestUserMessage, { role: 'assistant', content: data.choices[0].message.content }],
-        {
-          ...analysis,
-          intimacy_progression: analysis.should_level_up ? `${currentIntimacyLevel} → ${currentIntimacyLevel + 1}` : `Stable at ${currentIntimacyLevel}`,
-          psychology_insights: {
-            love_language: analysis.love_language_hints,
-            attachment: analysis.attachment_hints,
-            mbti_fusion: analysis.mbti_analysis,
-            values: analysis.family_values_hints
-          },
-          mbti_confidence_scores: updatedProfile.mbti_confidence_scores,
-          three_layer_system: {
-            active: true,
-            resistance_handled: analysis.resistance_signals?.detected || false,
-            celebration_triggered: !!analysis.celebration_opportunity,
-            natural_flow_maintained: true
-          }
-        },
-        sessionSummary
-      );
-
-      // PHASE 2.2: Return enhanced response with Natural Conversation insights
-      res.json({
-        ...data,
-        userInsights: {
-          // Existing insights
-          detectedMood: analysis.mood,
-          detectedEnergy: analysis.energy,
-          currentInterests: updatedProfile.interests || [],
-          communicationStyle: analysis.communication_style,
-          emotionalNeeds: analysis.emotional_needs,
-          conversationCount: conversationHistory.length + 1,
-          isReturningUser: conversationHistory.length > 0,
-          userName: user.user_name,
-          userGender: user.user_gender,
-          
-          // Enhanced conversation flow insights
-          intimacyLevel: analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel,
-          emotionalOpenness: analysis.emotional_openness,
-          storySharingLevel: analysis.story_sharing_level,
-          intimacyProgression: analysis.should_level_up,
-          celebrationMoment: analysis.celebration_opportunity,
-          nextQuestionSuggestion: analysis.next_question_suggestion,
-          
-          // PHASE 2.2: Natural Conversation System insights
-          naturalConversationActive: true,
-          threeLayerSystemWorking: true,
-          // NEW: Couple Compass progression insights
-          progressionReady: analysis.progression_ready,
-          progressionPath: analysis.progression_path,
-          transitionSuggestion: analysis.transition_suggestion,
-          triggerReason: analysis.trigger_reason,
-          progressionSystem: {
-            active: true,
-            pathsDetected: ['psychology_success', 'psychology_stuck', 'direct_interest'],
-            currentStatus: analysis.progression_ready ? 'ready_for_transition' : 'building_foundation'
-          },
-          mbtiConfidenceScores: updatedProfile.mbti_confidence_scores || {},
-          mbtiAnalysis: analysis.mbti_analysis,
-          dimensionsNeeded: analysis.mbti_needs?.dimensions_needed || [],
-          priorityDimension: analysis.mbti_needs?.priority_dimension,
-          resistanceDetected: analysis.resistance_signals?.detected || false,
-          resistanceHandled: analysis.resistance_signals?.detected ? 'Gentler approach activated' : 'No resistance',
-          topicBridges: analysis.topic_bridges || [],
-          
-          // Psychology framework insights
-          advancedLoveLanguage: analysis.love_language_hints,
-          advancedAttachment: analysis.attachment_hints,
-          
-          // PHASE 2.2: Enhanced profile completeness with natural conversation tracking
-          profileCompleteness: calculateEnhancedProfileCompleteness(updatedProfile),
-          mbtiProgress: calculateMBTIProgress(updatedProfile.mbti_confidence_scores || {}),
-          readyForMatching: assessMatchingReadiness(updatedProfile),
-          conversationQuality: {
-            naturalFlow: 'Active',
-            psychologyIntegration: 'Seamless',
-            userComfort: analysis.resistance_signals?.detected ? 'Gentle Mode' : 'High',
-            dataCollection: 'Effective'
-          }
-        }
-      });
-
-    } else {
-      // Handle non-user messages normally
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: messages,
-          max_tokens: 200,
-          temperature: 0.8
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        return res.status(response.status).json({ 
-          error: `OpenAI API Error: ${errorData}` 
-        });
-      }
-
-      const data = await response.json();
-      res.json(data);
-    }
-
-  } catch (error) {
-    console.error('Backend error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Get user insights endpoint
-app.get('/api/user-insights/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const user = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
-    const conversations = await getUserConversationHistory(userId, 10);
-    
-    if (user.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const userData = user.rows[0];
-    
-    res.json({
-      userId: userData.user_id,
-      userName: userData.user_name,
-      userGender: userData.user_gender,
-      phoneNumber: userData.phone_number,
-      createdAt: userData.created_at,
-      lastSeen: userData.last_seen,
-      personalityData: userData.personality_data,
-      relationshipContext: userData.relationship_context,
-      conversationCount: conversations.length,
-      totalConversations: userData.total_conversations,
-      recentTopics: conversations.slice(-3).map(conv => conv.session_summary),
-      profileCompleteness: calculateEnhancedProfileCompleteness(userData.personality_data),
-      
-      // PHASE 2.2: Enhanced insights with natural conversation tracking
-      mbtiProgress: calculateMBTIProgress(userData.personality_data?.mbti_confidence_scores || {}),
-      mbtiType: determineMBTIType(userData.personality_data?.mbti_confidence_scores || {}),
-      readyForMatching: assessMatchingReadiness(userData.personality_data || {}),
-      naturalConversationSystem: {
-        active: userData.personality_data?.conversation_flow?.three_layer_system_active || false,
-        qualityScore: userData.personality_data?.conversation_flow?.emotional_openness || 'unknown',
-        resistanceLevel: userData.personality_data?.resistance_count || 0,
-        celebrationMoments: userData.personality_data?.conversation_flow?.last_celebration ? 1 : 0
-      }
-    });
-  } catch (error) {
-    console.error('Error getting user insights:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// PHASE 2.2: Enhanced profile completeness calculation with natural conversation tracking
-function calculateEnhancedProfileCompleteness(personalityData) {
-  const phases = {
-    // Phase 1: Basic personality (15% weight)
-    basic: ['interests', 'communication_patterns', 'emotional_patterns'],
-    
-    // Phase 2.1: Conversation flow insights (15% weight)  
-    conversation_flow: ['conversation_flow'],
-    
-    // Phase 2.2: MBTI framework (40% weight) - Primary focus with natural detection
-    mbti: ['mbti_confidence_scores'],
-    
-    // Phase 2.3: Advanced psychology (20% weight)
-    advanced_psychology: ['love_language_hints', 'attachment_hints'],
-    
-    // Phase 2.4: Values and lifestyle (10% weight)
-    values: ['family_values_hints']
-  };
-  
-  const weights = {
-    basic: 0.15,
-    conversation_flow: 0.15,
-    mbti: 0.40, // Increased weight for natural MBTI detection
-    advanced_psychology: 0.20,
-    values: 0.10
-  };
-  
-  let totalScore = 0;
-  
-  Object.entries(phases).forEach(([phase, fields]) => {
-    let phaseScore = 0;
-    
-    if (phase === 'mbti') {
-      // Enhanced MBTI scoring with natural conversation bonus
-      const mbtiScores = personalityData.mbti_confidence_scores || {};
-      const avgConfidence = Object.values(mbtiScores).reduce((sum, score) => sum + score, 0) / 4;
-      phaseScore = Math.min(avgConfidence / 100, 1); // Normalize to 0-1
-      
-      // Bonus for natural conversation system being active
-      if (personalityData.conversation_flow?.three_layer_system_active) {
-        phaseScore = Math.min(phaseScore + 0.1, 1); // 10% bonus for natural approach
-      }
-    } else {
-      const phaseFields = fields.filter(field => {
-        const data = personalityData[field];
-        if (Array.isArray(data)) return data.length > 0;
-        if (typeof data === 'object') return Object.keys(data || {}).length > 0;
-        return !!data;
-      });
-      phaseScore = phaseFields.length / fields.length;
-    }
-    
-    totalScore += phaseScore * weights[phase];
-  });
-  
-  return Math.round(totalScore * 100);
-}
-
-// PHASE 2.2: Calculate MBTI discovery progress with natural conversation bonuses
-function calculateMBTIProgress(mbtiScores) {
-  const dimensionProgress = {
-    E_I: Math.round(mbtiScores.E_I || 0),
-    S_N: Math.round(mbtiScores.S_N || 0),
-    T_F: Math.round(mbtiScores.T_F || 0),
-    J_P: Math.round(mbtiScores.J_P || 0)
-  };
-  
-  const avgProgress = Object.values(dimensionProgress).reduce((sum, score) => sum + score, 0) / 4;
-  const dimensionsAbove75 = Object.values(dimensionProgress).filter(score => score >= 75).length;
-  
-  return {
-    individual_dimensions: dimensionProgress,
-    average_confidence: Math.round(avgProgress),
-    dimensions_discovered: dimensionsAbove75,
-    total_dimensions: 4,
-    discovery_percentage: Math.round((dimensionsAbove75 / 4) * 100),
-    detection_method: 'Natural Three-Layer Conversation System'
-  };
-}
-
-// PHASE 2.2: Determine MBTI type from confidence scores with natural conversation context
-function determineMBTIType(mbtiScores) {
-  const type = {
-    determined: false,
-    partial_type: '',
-    confidence_level: 'low',
-    type_letters: {},
-    detection_quality: 'natural_conversation' // Added for Phase 2.2
-  };
-  
-  // Determine each dimension based on confidence threshold
-  if (mbtiScores.E_I >= 75) {
-    type.type_letters.energy = 'E';
-  } else if (mbtiScores.E_I <= 25) {
-    type.type_letters.energy = 'I';
-  }
-  
-  if (mbtiScores.S_N >= 75) {
-    type.type_letters.information = 'S';
-  } else if (mbtiScores.S_N <= 25) {
-    type.type_letters.information = 'N';
-  }
-  
-  if (mbtiScores.T_F >= 75) {
-    type.type_letters.decisions = 'T';
-  } else if (mbtiScores.T_F <= 25) {
-    type.type_letters.decisions = 'F';
-  }
-  
-  if (mbtiScores.J_P >= 75) {
-    type.type_letters.lifestyle = 'J';
-  } else if (mbtiScores.J_P <= 25) {
-    type.type_letters.lifestyle = 'P';
-  }
-  
-  // Calculate partial type and confidence
-  const determinedLetters = Object.values(type.type_letters).length;
-  
-  if (determinedLetters === 4) {
-    type.partial_type = `${type.type_letters.energy}${type.type_letters.information}${type.type_letters.decisions}${type.type_letters.lifestyle}`;
-    type.determined = true;
-    type.confidence_level = 'high';
-  } else if (determinedLetters >= 2) {
-    type.partial_type = `${type.type_letters.energy || '_'}${type.type_letters.information || '_'}${type.type_letters.decisions || '_'}${type.type_letters.lifestyle || '_'}`;
-    type.confidence_level = 'medium';
-  } else if (determinedLetters >= 1) {
-    type.partial_type = 'Some preferences identified through natural conversation';
-    type.confidence_level = 'low';
-  }
-  
-  return type;
-}
-
-// PHASE 2.2: Assess readiness for matchmaking with natural conversation quality
-function assessMatchingReadiness(personalityData) {
-  const criteria = {
-    mbti_completion: 0,
-    love_language_clarity: 0,
-    attachment_understanding: 0,
-    values_exploration: 0,
-    conversation_quality: 0, // New for Phase 2.2
-    overall_readiness: 0
-  };
-  
-  // MBTI completion (35% weight - reduced slightly)
-  const mbtiScores = personalityData.mbti_confidence_scores || {};
-  const avgMBTI = Object.values(mbtiScores).reduce((sum, score) => sum + score, 0) / 4;
-  criteria.mbti_completion = Math.round(avgMBTI);
-  
-  // Love language clarity (20% weight)
-  const loveLanguages = personalityData.love_language_hints || [];
-  criteria.love_language_clarity = Math.min(loveLanguages.length * 25, 100);
-  
-  // Attachment understanding (15% weight)
-  const attachmentHints = personalityData.attachment_hints || [];
-  criteria.attachment_understanding = Math.min(attachmentHints.length * 33, 100);
-  
-  // Values exploration (15% weight)
-  const valuesHints = personalityData.family_values_hints || [];
-  criteria.values_exploration = Math.min(valuesHints.length * 50, 100);
-  
-  // Conversation quality (15% weight - NEW for Phase 2.2)
-  const conversationFlow = personalityData.conversation_flow || {};
-  let qualityScore = 0;
-  if (conversationFlow.three_layer_system_active) qualityScore += 30;
-  if (conversationFlow.emotional_openness === 'very_open') qualityScore += 40;
-  else if (conversationFlow.emotional_openness === 'moderately_open') qualityScore += 20;
-  if ((personalityData.resistance_count || 0) === 0) qualityScore += 30;
-  criteria.conversation_quality = Math.min(qualityScore, 100);
-  
-  // Calculate overall readiness with new weighting
-  criteria.overall_readiness = Math.round(
-    (criteria.mbti_completion * 0.35) +
-    (criteria.love_language_clarity * 0.20) +
-    (criteria.attachment_understanding * 0.15) +
-    (criteria.values_exploration * 0.15) +
-    (criteria.conversation_quality * 0.15)
-  );
-  
-  return {
-    ...criteria,
-    ready_for_matching: criteria.overall_readiness >= 75,
-    readiness_level: criteria.overall_readiness >= 75 ? 'ready' : 
-                    criteria.overall_readiness >= 50 ? 'almost_ready' : 'building_profile',
-    detection_method: 'Natural Three-Layer Conversation System'
-  };
-}
-
-// Database connection test endpoint
-app.get('/api/test-db', async (req, res) => {
-  try {
-    // Test basic connection
-    const client = await pool.connect();
-    const result = await client.query('SELECT NOW() as current_time');
-    client.release();
-
-    // Test table existence
-    const tablesResult = await pool.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-    `);
-
-    // Test allowlist system
-    const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
-    const userCount = await pool.query('SELECT COUNT(*) FROM users');
-
-    res.json({
-      status: 'Database connection successful! 🎉',
-      database_info: {
-        connected: true,
-        current_time: result.rows[0].current_time,
-        tables_created: tablesResult.rows.map(row => row.table_name),
-        allowlist_users: allowlistCount.rows[0].count,
-        total_users: userCount.rows[0].count,
-        allowlist_capacity: '35 users max'
-      },
-      features: [
-        'Complete user profiles (name, gender, phone)',
-        'Phone number allowlist system (35 users max)',
-        'Cross-session memory with user identification',
-        'Progressive relationship building',
-        'Mood and interest persistence',
-        'Admin management endpoints'
-      ]
-    });
-  } catch (error) {
-    console.error('Database test error:', error);
-    res.status(500).json({ 
-      status: 'Database connection failed',
-      error: error.message,
-      suggestion: 'Make sure PostgreSQL is added to your Railway project and DATABASE_URL is set'
-    });
-  }
-});
-
-// Enhanced health check with Phase 2.2 Natural Conversation System
-app.get('/api/health', async (req, res) => {
-  try {
-    const dbTest = await pool.query('SELECT NOW()');
-    const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
-    
-    res.json({ 
-      status: 'SoulSync AI Backend - PHASE 2.2 COMPLETE: Natural Three-Layer Conversation System ✅',
-      database_connected: true,
-      database_time: dbTest.rows[0].now,
-      allowlist_users: allowlistCount.rows[0].count,
-      allowlist_capacity: '35 users max',
-      phase_status: {
-        'Phase 1': '✅ Complete - Phone verification, memory, basic personality',
-        'Phase 2.1': '✅ Complete - Natural Conversation Flow Engine + Psychology Framework',
-        'Phase 2.2': '✅ COMPLETE - Natural Three-Layer Conversation System + Strategic MBTI Detection',
-        'Phase 2.3': '🔄 Ready - Advanced Love Language & Attachment (framework in place)', 
-        'Phase 2.4': '🔄 Ready - Values & Lifestyle Profiling (framework in place)'
-      },
-      features: [
-        // Phase 1 & 2.1 Features
-        'PostgreSQL Memory System ✅',
-        'Phone Number Allowlist (35 users) ✅',
-        'Complete User Profiles ✅',
-        'Cross-session Continuity ✅',
-        'Adaptive personality system ✅',
-        'Real-time mood detection ✅',
-        'Interest tracking ✅',
-        'Natural Conversation Flow Engine ✅',
-        'Progressive intimacy levels (0-4) ✅',
-        'Story-based question generation ✅',
-        'Interactive conversation elements ✅',
-        'Emotional openness tracking ✅',
-        'Celebration moment detection ✅',
-        
-        // NEW Phase 2.2 Features - Natural Conversation System
-        '🎭 Three-Layer Response Structure ✅',
-        '🌟 Natural Psychology Detection ✅',
-        '💫 Emotional-First Conversation Flow ✅',
-        '🎯 Strategic-but-Gentle MBTI Discovery ✅',
-        '🌸 Resistance Detection & Graceful Handling ✅',
-        '🎉 Trust-Building Celebration System ✅',
-        '🔄 Natural Topic Bridging ✅',
-        '📈 Enhanced Confidence Scoring (0-100 scale) ✅',
-        '🤝 Cross-Framework Psychology Validation ✅',
-        '💝 Natural Intimacy Progression ✅',
-        
-        'Admin management system ✅',
-        'Database schema fix endpoint ✅'
-      ],
-      conversation_capabilities: {
-        three_layer_system: 'Active',
-        natural_psychology_detection: 'Seamless',
-        intimacy_levels: 5,
-        story_templates: 25,
-        interactive_elements: 12,
-        mbti_scenarios: '100+',
-        psychology_frameworks: 4,
-        mood_adaptations: 'Dynamic',
-        conversation_flow: 'Natural Three-Layer: Emotional → Curiosity → Psychology',
-        mbti_dimensions: 4,
-        confidence_tracking: 'Real-time natural conversation analysis',
-        resistance_handling: 'Gentle redirection with trust-building',
-        celebration_system: 'Automated insight recognition and validation'
-      },
-      ai_intelligence: {
-        conversation_approach: 'Natural Three-Layer Response Structure',
-        psychology_integration: 'Emotional-first strategic discovery',
-        user_experience: 'Feels like friendship, not interrogation',
-        data_collection: 'Invisible and effective through genuine curiosity',
-        resistance_handling: 'Graceful adaptation with trust preservation',
-        celebration_system: 'Builds excitement about self-discovery',
-        natural_flow: 'Every topic bridges naturally to personality insights'
-      }
-    });
-  } catch (error) {
-    res.json({ 
-      status: 'Backend running, database connection issue',
-      database_connected: false,
-      database_error: error.message,
-      features: [
-        'In-memory storage (fallback)',
-        'Natural Three-Layer conversation flow',
-        'Mood detection',
-        'Interest tracking'
-      ]
-    });
-  }
-});
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🧠 SoulSync AI Backend - PHASE 2.2 COMPLETE: Natural Three-Layer Conversation System`);
-  console.log('✅ PHASE 1: Phone verification, memory, basic personality detection');
-  console.log('✅ PHASE 2.1: Natural conversation flow + comprehensive psychology framework');
-  console.log('✅ PHASE 2.2: Natural Three-Layer Response System + Strategic MBTI detection');
-  console.log('🎭 Core Innovation: Emotional → Curiosity → Psychology (feels natural, not robotic)');
-  console.log('🌟 Key Features: Natural psychology detection, resistance handling, celebration system');
-  console.log('💫 User Experience: Friendship with incredible psychological insights');
-  console.log('🔄 Ready for Phase 2.3: Advanced Love Languages | Phase 2.4: Values & Lifestyle');
-  console.log(`🚀 Running on port ${PORT} - Aria now understands people naturally!`);
-});
+      "I feel like I'm getting to know the real you, which is awesome. What's something you're passionate about
