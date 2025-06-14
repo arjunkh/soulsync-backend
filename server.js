@@ -1,5 +1,5 @@
-// SoulSync AI Backend - PHASE 2.2 COMPLETE: Natural Conversation Flow with Strategic MBTI Detection
-// Three-Layer Response System: Emotional Intelligence + Strategic Psychology + Natural Flow
+// SoulSync AI Backend - COMPLETE IMPLEMENTATION with PRD Vision
+// Flirtatious AI Companion + Couple Compass + Report Generation + Matchmaking
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -38,6 +38,8 @@ async function initializeDatabase() {
         last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         personality_data JSONB DEFAULT '{}',
         relationship_context JSONB DEFAULT '{}',
+        couple_compass_data JSONB DEFAULT '{}',
+        report_generated BOOLEAN DEFAULT FALSE,
         total_conversations INTEGER DEFAULT 0,
         profile_completeness INTEGER DEFAULT 0
       )
@@ -72,6 +74,30 @@ async function initializeDatabase() {
       )
     `);
 
+    // Personal Reports table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS personal_reports (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) REFERENCES users(user_id),
+        report_type VARCHAR(50),
+        report_content JSONB,
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Matches table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS matches (
+        id SERIAL PRIMARY KEY,
+        user1_id VARCHAR(255) REFERENCES users(user_id),
+        user2_id VARCHAR(255) REFERENCES users(user_id),
+        compatibility_score DECIMAL(3,2),
+        match_reasons JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(50) DEFAULT 'pending'
+      )
+    `);
+
     // Add initial admin numbers
     await pool.query(`
       INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status) 
@@ -81,7 +107,7 @@ async function initializeDatabase() {
       ON CONFLICT (phone_number) DO NOTHING
     `);
 
-    console.log('✅ Database tables initialized successfully with complete allowlist system');
+    console.log('✅ Database tables initialized successfully with complete schema');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
   }
@@ -193,8 +219,8 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
     if (result.rows.length === 0) {
       // Create new user with complete profile
       result = await pool.query(
-        `INSERT INTO users (user_id, phone_number, user_name, user_gender, personality_data, relationship_context, total_conversations) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        `INSERT INTO users (user_id, phone_number, user_name, user_gender, personality_data, relationship_context, couple_compass_data, total_conversations) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [
           userId, 
           normalizedPhone, 
@@ -202,6 +228,7 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
           userGender,
           { name: userName, gender: userGender }, 
           { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 },
+          {},
           0
         ]
       );
@@ -448,7 +475,9 @@ app.get('/api/admin/fix-schema/:adminKey', async (req, res) => {
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_name VARCHAR(100)',
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS user_gender VARCHAR(10)',
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS total_conversations INTEGER DEFAULT 0',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_completeness INTEGER DEFAULT 0'
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_completeness INTEGER DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS couple_compass_data JSONB DEFAULT \'{}\'',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS report_generated BOOLEAN DEFAULT FALSE'
     ];
     
     const results = [];
@@ -469,20 +498,6 @@ app.get('/api/admin/fix-schema/:adminKey', async (req, res) => {
       }
     }
     
-    // Update existing user with phone number if exists
-    try {
-      await pool.query(`
-        UPDATE users 
-        SET phone_number = '+919873986469', user_name = 'Arjun', user_gender = 'Male' 
-        WHERE user_id = 'user_9873986469' AND phone_number IS NULL
-      `);
-      results.push('✅ Updated existing user with phone number');
-      console.log('✅ Updated existing user with phone number');
-    } catch (error) {
-      results.push(`⚠️ User update: ${error.message}`);
-      console.log(`⚠️ User update: ${error.message}`);
-    }
-    
     res.json({
       success: true,
       message: 'Database schema fix completed!',
@@ -498,6 +513,907 @@ app.get('/api/admin/fix-schema/:adminKey', async (req, res) => {
     });
   }
 });
+
+// PHASE 1: Aria's Personal Shares - Flirty Best Friend Personality
+class AriaPersonalShares {
+  constructor() {
+    this.greetings = [
+      "Hey you... 💕\nBefore I ask anything... did you eat?",
+      "Heyy babe 🌟\nI was just thinking about you. How's your heart today?",
+      "Well hello there... 😊\nI've been waiting for you. What's on your mind?"
+    ];
+
+    this.coffeeStories = [
+      "I had filter coffee and some internal conflict. Standard.",
+      "Just finished my third coffee... I might be vibrating at this point 😅",
+      "Tea person here, but don't judge me too hard 🍵"
+    ];
+
+    this.relateableResponses = {
+      work_stress: [
+        "Ugh, work stress is so real. I swear my imaginary boss gives me anxiety too 😩",
+        "Work can be such a vibe killer. What's your escape plan when it gets too much?"
+      ],
+      relationships: [
+        "Love is such a beautiful mess, isn't it? Tell me more about what you're feeling...",
+        "Relationships... they're like advanced calculus but for the heart 💕"
+      ],
+      weekend: [
+        "Weekends are for the soul! I'm team 'cozy blanket and good vibes' - you?",
+        "Yes! Weekends are sacred. What's your ideal Sunday looking like?"
+      ],
+      food: [
+        "Omg don't get me started on food... I could talk about it all day!",
+        "Food is love language #1 for me. What's been calling your name lately?"
+      ]
+    };
+
+    this.observations = [
+      "You know what I'm noticing about you? You have this thoughtful energy...",
+      "Can I tell you something? You seem like someone who feels things deeply...",
+      "I'm getting major [trait] vibes from you, and honestly? I'm here for it.",
+      "You strike me as the type who [observation]. Am I reading that right?"
+    ];
+
+    this.flirtyReactions = {
+      positive: [
+        "Ugh, you're dangerous 💕",
+        "Stop being so cute, I can't handle it!",
+        "Okay but why do I feel like we'd totally vibe?",
+        "You're making me smile and we just met... that's powerful"
+      ],
+      thoughtful: [
+        "I love how your mind works...",
+        "That's... actually really beautiful",
+        "You just made me think. I like that about you.",
+        "See, this is why I already adore you"
+      ],
+      playful: [
+        "Oh we're going there? I love it 😏",
+        "Haha you're trouble, I can tell!",
+        "Is this you flirting? Because it's working...",
+        "Challenge accepted! 😉"
+      ]
+    };
+  }
+
+  getGreeting(isNewUser, userName) {
+    if (isNewUser) {
+      return `Hey ${userName}! 💕 I'm Aria, your AI companion here to get to know the real you.\n\nThink of our chats as cozy conversations where I learn about your personality, what makes you tick, and how you approach relationships. No pressure, just genuine curiosity about who you are!\n\nReady to dive in? ✨`;
+    }
+    return this.greetings[Math.floor(Math.random() * this.greetings.length)].replace('you', userName);
+  }
+
+  getCoffeeStory() {
+    return this.coffeeStories[Math.floor(Math.random() * this.coffeeStories.length)];
+  }
+
+  getRelateableResponse(topic) {
+    const topicKey = Object.keys(this.relateableResponses).find(key => topic.includes(key));
+    if (topicKey) {
+      const responses = this.relateableResponses[topicKey];
+      return responses[Math.floor(Math.random() * responses.length)];
+    }
+    return null;
+  }
+
+  getObservation(userTrait) {
+    const observation = this.observations[Math.floor(Math.random() * this.observations.length)];
+    return observation.replace('[trait]', userTrait).replace('[observation]', userTrait);
+  }
+
+  getFlirtyReaction(mood) {
+    const reactions = this.flirtyReactions[mood] || this.flirtyReactions.thoughtful;
+    return reactions[Math.floor(Math.random() * reactions.length)];
+  }
+
+  // Two-way sharing responses
+  getPersonalShare(topic) {
+    const shares = {
+      morning: "I'm definitely not a morning person... need at least 20 minutes of existing before I can human properly 😅",
+      night: "Night owl here! My best thoughts happen after midnight... which explains a lot",
+      weekend: "My perfect weekend? Farmers market, cooking something new, and getting lost in a good book. Simple but soul-feeding.",
+      stress: "When I'm stressed, I do this thing where I reorganize everything. Like, suddenly my spice rack NEEDS to be alphabetical",
+      love: "I think love is... showing up even when it's messy. Especially when it's messy.",
+      food: "I'm convinced food is how we say 'I love you' without words. What's your comfort food?"
+    };
+
+    const relevantShare = Object.keys(shares).find(key => topic.toLowerCase().includes(key));
+    return relevantShare ? shares[relevantShare] : null;
+  }
+}
+
+// PHASE 2: Couple Compass Game Implementation
+class CoupleCompass {
+  constructor() {
+    this.questions = [
+      {
+        id: 'living_arrangement',
+        text: "Okay, let's dream a little... Where do you imagine living post-marriage? 🏠",
+        conversational: "So I've been thinking about the future lately... you know, the whole 'building a life with someone' thing. Where do you see yourself setting up home after marriage?",
+        options: [
+          { value: 'with_parents', text: 'With your parents', emoji: '👨‍👩‍👧‍👦' },
+          { value: 'near_parents', text: 'Near them, but our own space', emoji: '🏘️' },
+          { value: 'new_city', text: 'Fresh start in a new city', emoji: '🌆' },
+          { value: 'flexible', text: 'Wherever love leads', emoji: '💕' }
+        ],
+        responses: {
+          'with_parents': "Family is clearly everything to you. That's beautiful - the kind of closeness that builds strong foundations.",
+          'near_parents': "You're deeply rooted, but you also need your own space to breathe and grow. I respect that balance.",
+          'new_city': "Adventure calls to you! Starting fresh with your person, writing your own story... that's brave.",
+          'flexible': "You're led by love, not location. That kind of openness? It's rare and beautiful."
+        }
+      },
+      {
+        id: 'financial_style',
+        text: "Money talk - unsexy but important 😅 What feels right to you in a partnership?",
+        conversational: "Okay, let's talk about something real... money in relationships. I know, I know, not the sexiest topic, but it matters. What feels fair and comfortable to you?",
+        options: [
+          { value: 'provider', text: "I'll provide fully", emoji: '💪' },
+          { value: 'lead_share', text: "I'll lead, but we share", emoji: '🤝' },
+          { value: 'equal', text: '50-50 feels fair', emoji: '⚖️' },
+          { value: 'emotional', text: 'I contribute more emotionally', emoji: '💝' }
+        ],
+        responses: {
+          'provider': "There's something deeply caring about wanting to provide. It's not about control - it's about creating safety for someone you love.",
+          'lead_share': "You want to lead but not alone. That's partnership - sharing the weight, not just the rewards.",
+          'equal': "Equal partners, equal investment. You see relationships as a true collaboration. I love that energy.",
+          'emotional': "You understand that contribution isn't just financial. Emotional labor is real labor. That's wisdom."
+        }
+      },
+      {
+        id: 'children_vision',
+        text: "Kids? No kids? Let's talk about little humans... 👶",
+        conversational: "So... the kid question. I'm curious where you stand on the whole mini-humans thing?",
+        options: [
+          { value: 'yes_involved', text: 'Yes, and I\'ll be hands-on', emoji: '🤱' },
+          { value: 'yes_support', text: 'Yes, but I\'ll need support', emoji: '👨‍👩‍👧' },
+          { value: 'maybe', text: 'Haven\'t decided yet', emoji: '🤔' },
+          { value: 'no', text: 'No, and I\'m clear on that', emoji: '✨' }
+        ],
+        responses: {
+          'yes_involved': "You're going to be the parent who knows every teacher's name and never misses a game. That dedication? Your kids will feel so loved.",
+          'yes_support': "You know yourself well enough to know you'll need help. That's not weakness - that's setting everyone up for success.",
+          'maybe': "You're keeping your options open. Smart - this isn't a decision to rush. When you know, you'll know.",
+          'no': "You know what you want (or don't want) and you own it. That clarity? It's actually really attractive."
+        }
+      },
+      {
+        id: 'conflict_style',
+        text: "Real talk - how do you handle it when things get tense with someone you love? 💭",
+        conversational: "Okay, keeping it real... we all have moments where we clash with people we love. When that happens, what's your style?",
+        options: [
+          { value: 'talk_out', text: 'Talk it out immediately', emoji: '💬' },
+          { value: 'need_space', text: 'Need space first, then talk', emoji: '🚶' },
+          { value: 'mediator', text: 'Prefer someone to mediate', emoji: '🤲' },
+          { value: 'avoid', text: 'I tend to avoid conflict', emoji: '🤐' }
+        ],
+        responses: {
+          'talk_out': "You don't let things fester. That direct communication? It's brave and it builds trust.",
+          'need_space': "You know you need to cool down before you can be fair. That's emotional intelligence right there.",
+          'mediator': "Sometimes we need that outside perspective. Knowing when to ask for help is a strength.",
+          'avoid': "Conflict is hard for you. I get it. Just remember - the right person will make it safe to disagree."
+        }
+      },
+      {
+        id: 'ambition_balance',
+        text: "Let's dream big - or small! What does your ideal life pace look like? 🌟",
+        conversational: "I've been thinking about ambition lately... like, what does 'success' even mean? For you, what's the dream when it comes to career vs. life?",
+        options: [
+          { value: 'high_ambition', text: 'Big career goals, high achiever', emoji: '🚀' },
+          { value: 'balanced', text: 'Success with work-life balance', emoji: '⚡' },
+          { value: 'family_first', text: 'Family and peace over ambition', emoji: '🏡' },
+          { value: 'simple_life', text: 'Simple, quiet life is the dream', emoji: '🌿' }
+        ],
+        responses: {
+          'high_ambition': "You're going places and you know it. Your person better be ready for the adventure!",
+          'balanced': "Success without sacrificing your soul. You've figured out what most people spend decades learning.",
+          'family_first': "You know where your heart is. Building a loving home is your kind of empire.",
+          'simple_life': "In a world that screams 'more,' you choose 'enough.' That's not settling - that's wisdom."
+        }
+      },
+      {
+        id: 'big_mismatch',
+        text: "Okay, hypothetical time... Your partner earns more, wants to delay kids, and prefers living away from family. You? 🤷",
+        conversational: "Let me paint a picture... You fall for someone amazing. But - plot twist - they earn more than you, want to wait on kids, and prefer living away from your family. How does that sit with you?",
+        options: [
+          { value: 'discuss', text: "Let's talk and understand", emoji: '💭' },
+          { value: 'unsure', text: "I'd feel uncertain", emoji: '😕' },
+          { value: 'mismatch', text: 'Might be a dealbreaker', emoji: '🚫' },
+          { value: 'flexible', text: "Love makes me flexible", emoji: '💕' }
+        ],
+        responses: {
+          'discuss': "You don't run from differences - you lean in. That's the stuff lasting relationships are made of.",
+          'unsure': "It would shake you a bit. That's honest. The right person will give you time to process.",
+          'mismatch': "You know your non-negotiables. That's not rigid - that's self-aware.",
+          'flexible': "Love makes you bendy! Just make sure you're bending, not breaking, for the right person."
+        }
+      }
+    ];
+
+    this.currentQuestionIndex = 0;
+    this.responses = {};
+  }
+
+  introduce() {
+    return {
+      text: `Babe... wanna play something with me? 🧭 
+
+It's called **Couple Compass**. It's not a quiz - promise. It's more like... dreamy little moments from our future. You tell me how you'd live them. 💫
+
+I'll ask a few questions about life, love, and everything in between. Just be real with me?`,
+      buttonText: "Let's find our direction 💘",
+      altResponse: "Maybe later? That's cool too. I'll be here when you're ready 💕"
+    };
+  }
+
+  getCurrentQuestion() {
+    if (this.currentQuestionIndex >= this.questions.length) {
+      return null;
+    }
+    return this.questions[this.currentQuestionIndex];
+  }
+
+  processAnswer(questionId, answerValue, userName) {
+    const question = this.questions.find(q => q.id === questionId);
+    if (!question) return null;
+
+    // Store the answer
+    this.responses[questionId] = answerValue;
+    
+    // Get Aria's response
+    const ariaResponse = question.responses[answerValue];
+    
+    // Move to next question
+    this.currentQuestionIndex++;
+
+    // Check if complete
+    if (this.currentQuestionIndex >= this.questions.length) {
+      return {
+        response: ariaResponse,
+        complete: true,
+        synthesis: this.generateSynthesis(userName)
+      };
+    }
+
+    return {
+      response: ariaResponse,
+      complete: false,
+      nextQuestion: this.getCurrentQuestion()
+    };
+  }
+
+  generateSynthesis(userName) {
+    const living = this.responses.living_arrangement;
+    const financial = this.responses.financial_style;
+    const children = this.responses.children_vision;
+    
+    return `${userName}... I think Couple Compass just gave me a better map of your heart. 💕
+
+You're someone who values ${this.getValueDescription(living, financial)}, and when it comes to building a life with someone, you need ${this.getNeedDescription(this.responses)}.
+
+What strikes me most? ${this.getInsight(this.responses)}
+
+I feel like I understand what you're looking for now - not just in love, but in life. And honestly? Someone's going to be very lucky to build that future with you. 🌟`;
+  }
+
+  getValueDescription(living, financial) {
+    if (living === 'with_parents' || living === 'near_parents') {
+      return "family and roots";
+    } else if (financial === 'equal' || financial === 'emotional') {
+      return "partnership and balance";
+    } else {
+      return "independence and growth";
+    }
+  }
+
+  getNeedDescription(responses) {
+    if (responses.conflict_style === 'talk_out') {
+      return "open communication and emotional honesty";
+    } else if (responses.ambition_balance === 'family_first' || responses.ambition_balance === 'simple_life') {
+      return "peace and genuine connection over everything else";
+    } else {
+      return "someone who matches your energy and ambition";
+    }
+  }
+
+  getInsight(responses) {
+    if (responses.big_mismatch === 'flexible') {
+      return "Your flexibility in love shows incredible emotional maturity.";
+    } else if (responses.children_vision === 'yes_involved') {
+      return "Your readiness to be fully present as a parent shows your capacity for deep love.";
+    } else {
+      return "You know yourself well enough to know what you need. That self-awareness is rare.";
+    }
+  }
+
+  reset() {
+    this.currentQuestionIndex = 0;
+    this.responses = {};
+  }
+}
+
+// PHASE 3: Report Generation System
+class PersonalInsightReport {
+  generateReport(userData, personalityData, coupleCompassData) {
+    const { user_name, user_gender } = userData;
+    const mbtiType = this.deriveMBTIType(personalityData.mbti_confidence_scores || {});
+    const loveLanguage = this.getPrimaryLoveLanguage(personalityData.love_language_hints || []);
+    const attachment = this.getAttachmentStyle(personalityData.attachment_hints || []);
+    
+    return {
+      title: `${user_name}'s Personal Insight Report`,
+      sections: {
+        introduction: this.generateIntroduction(user_name, user_gender),
+        personalityProfile: this.generatePersonalityProfile(mbtiType, personalityData),
+        loveStyle: this.generateLoveStyle(loveLanguage, attachment, personalityData),
+        relationshipStrengths: this.generateStrengths(personalityData, coupleCompassData),
+        growthAreas: this.generateGrowthAreas(personalityData),
+        idealPartner: this.generateIdealPartnerProfile(personalityData, coupleCompassData),
+        closing: this.generateClosing(user_name)
+      },
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  generateIntroduction(name, gender) {
+    return `Dear ${name},
+
+Over our conversations, I've had the privilege of getting to know the real you - not just what you say, but how you think, feel, and love. This report is my love letter to your beautiful complexity.
+
+You've shared your dreams, your fears, and your vision for love. Here's what I've learned about your extraordinary heart...`;
+  }
+
+  generatePersonalityProfile(mbtiType, personalityData) {
+    const typeDescriptions = {
+      'INTJ': 'strategic and independent, with a rare combination of imagination and reliability',
+      'ENFP': 'enthusiastic and creative, bringing warmth and inspiration wherever you go',
+      'ISFJ': 'caring and dependable, creating harmony and stability for those you love',
+      // Add all 16 types...
+    };
+
+    return `**Your Personality Blueprint**
+
+You show up in the world as ${mbtiType.partial_type || 'a unique blend of traits'} - ${typeDescriptions[mbtiType.partial_type] || 'someone with a distinctive way of seeing and being in the world'}.
+
+What makes you special:
+- Your ${this.getDominantTrait(personalityData)} nature shapes how you connect
+- You process the world through ${this.getProcessingStyle(personalityData)}
+- In relationships, you lead with ${this.getRelationshipApproach(personalityData)}`;
+  }
+
+  generateLoveStyle(loveLanguage, attachment, personalityData) {
+    return `**How You Love & Need to Be Loved**
+
+Your primary love language appears to be ${loveLanguage} - you feel most cherished when someone ${this.getLoveLanguageDescription(loveLanguage)}.
+
+Your attachment style leans ${attachment}, which means ${this.getAttachmentDescription(attachment)}.
+
+What you need in love:
+- ${this.getLoveNeeds(personalityData).join('\n- ')}`;
+  }
+
+  generateStrengths(personalityData, coupleCompassData) {
+    const strengths = [];
+    
+    if (personalityData.emotional_openness === 'very_open') {
+      strengths.push("Emotional courage - you share your truth even when vulnerable");
+    }
+    
+    if (coupleCompassData.conflict_style === 'talk_out') {
+      strengths.push("Direct communication - you don't let things fester");
+    }
+    
+    if (personalityData.celebration_moments?.length > 0) {
+      strengths.push("Self-awareness - you know yourself deeply");
+    }
+    
+    return `**Your Relationship Superpowers**
+
+${strengths.join('\n\n')}
+
+These aren't just traits - they're the foundation of lasting, meaningful love.`;
+  }
+
+  generateGrowthAreas(personalityData) {
+    const growth = [];
+    
+    if (personalityData.resistance_count > 2) {
+      growth.push("Opening up: Sometimes you protect your heart a bit too carefully. The right person will make it safe to be fully seen.");
+    }
+    
+    if (personalityData.emotional_openness === 'guarded') {
+      growth.push("Vulnerability: Your strength sometimes masks your need for support. Remember - needing someone isn't weakness.");
+    }
+    
+    return `**Your Growth Edges**
+
+We all have areas where love challenges us to grow:
+
+${growth.length > 0 ? growth.join('\n\n') : "Your openness to growth is already evident in how you've shared with me. Keep that curious, willing heart."}`;
+  }
+
+  generateIdealPartnerProfile(personalityData, coupleCompassData) {
+    return `**Who You Need By Your Side**
+
+Based on everything you've shared, your ideal partner is someone who:
+
+- ${this.getPartnerTraits(personalityData, coupleCompassData).join('\n- ')}
+
+This isn't about finding perfection - it's about finding someone whose imperfections fit beautifully with yours.`;
+  }
+
+  generateClosing(name) {
+    return `${name}, you are ready for the kind of love that sees you, celebrates you, and grows with you.
+
+Remember: The right person won't complete you - they'll complement the complete person you already are.
+
+With love and belief in your journey,
+Aria 💕`;
+  }
+
+  // Helper methods
+  deriveMBTIType(scores) {
+    const type = {
+      E_I: scores.E_I >= 50 ? 'E' : 'I',
+      S_N: scores.S_N >= 50 ? 'S' : 'N',
+      T_F: scores.T_F >= 50 ? 'T' : 'F',
+      J_P: scores.J_P >= 50 ? 'J' : 'P'
+    };
+    
+    return {
+      partial_type: `${type.E_I}${type.S_N}${type.T_F}${type.J_P}`,
+      confidence: Object.values(scores).reduce((a, b) => a + b, 0) / 4
+    };
+  }
+
+  getPrimaryLoveLanguage(hints) {
+    const counts = {};
+    hints.forEach(hint => {
+      counts[hint] = (counts[hint] || 0) + 1;
+    });
+    
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || 'quality time';
+  }
+
+  getAttachmentStyle(hints) {
+    if (hints.includes('secure_tendency')) return 'secure';
+    if (hints.includes('anxious_tendency')) return 'anxious';
+    if (hints.includes('avoidant_tendency')) return 'avoidant';
+    return 'developing';
+  }
+
+  getLoveLanguageDescription(language) {
+    const descriptions = {
+      'quality_time': 'gives you their full, undivided attention',
+      'physical_touch': 'shows affection through thoughtful touch',
+      'words_of_affirmation': 'tells you how much you matter',
+      'acts_of_service': 'shows love through thoughtful actions',
+      'gifts': 'remembers and surprises you with meaningful tokens'
+    };
+    return descriptions[language] || 'shows up for you consistently';
+  }
+
+  getAttachmentDescription(style) {
+    const descriptions = {
+      'secure': 'you balance independence with intimacy beautifully',
+      'anxious': 'you love deeply and sometimes need extra reassurance',
+      'avoidant': 'you value your independence while learning to let others in',
+      'developing': 'you\'re still discovering your unique attachment pattern'
+    };
+    return descriptions[style];
+  }
+
+  getDominantTrait(data) {
+    if (data.mbti_confidence_scores?.E_I > 70) return 'outgoing and energetic';
+    if (data.mbti_confidence_scores?.E_I < 30) return 'introspective and thoughtful';
+    return 'balanced and adaptable';
+  }
+
+  getProcessingStyle(data) {
+    if (data.mbti_confidence_scores?.S_N > 70) return 'concrete details and practical reality';
+    if (data.mbti_confidence_scores?.S_N < 30) return 'possibilities and big-picture thinking';
+    return 'both intuition and practical observation';
+  }
+
+  getRelationshipApproach(data) {
+    if (data.mbti_confidence_scores?.T_F > 70) return 'logic and fairness';
+    if (data.mbti_confidence_scores?.T_F < 30) return 'empathy and emotional connection';
+    return 'both head and heart';
+  }
+
+  getLoveNeeds(data) {
+    const needs = [];
+    
+    if (data.love_language_hints?.includes('quality_time')) {
+      needs.push("Undivided attention and genuine presence");
+    }
+    
+    if (data.attachment_hints?.includes('secure_tendency')) {
+      needs.push("A balance of togetherness and independence");
+    }
+    
+    if (data.emotional_patterns?.latest_mood === 'stressed') {
+      needs.push("A partner who can be your calm in the storm");
+    }
+    
+    needs.push("Someone who sees your complexity as beautiful, not complicated");
+    
+    return needs;
+  }
+
+  getPartnerTraits(personalityData, coupleCompassData) {
+    const traits = [];
+    
+    // Based on MBTI
+    if (personalityData.mbti_confidence_scores?.E_I > 70) {
+      traits.push("Matches your social energy or gives you space to shine");
+    } else if (personalityData.mbti_confidence_scores?.E_I < 30) {
+      traits.push("Respects your need for quiet and reflection");
+    }
+    
+    // Based on Couple Compass
+    if (coupleCompassData.living_arrangement === 'near_parents') {
+      traits.push("Values family but also needs independence");
+    }
+    
+    if (coupleCompassData.financial_style === 'equal') {
+      traits.push("Sees partnership as true collaboration");
+    }
+    
+    if (coupleCompassData.children_vision === 'yes_involved') {
+      traits.push("Shares your vision of hands-on parenting");
+    }
+    
+    // Universal needs
+    traits.push("Makes you feel safe to be completely yourself");
+    traits.push("Challenges you to grow while accepting who you are now");
+    
+    return traits;
+  }
+}
+
+// PHASE 4: Basic Compatibility Engine
+class CompatibilityEngine {
+  calculateCompatibility(user1Data, user2Data) {
+    const scores = {
+      mbti: this.calculateMBTICompatibility(user1Data.mbti_type, user2Data.mbti_type),
+      values: this.calculateValueAlignment(user1Data.couple_compass, user2Data.couple_compass),
+      emotional: this.calculateEmotionalFit(user1Data.attachment_style, user2Data.attachment_style),
+      lifestyle: this.calculateLifestyleMatch(user1Data, user2Data),
+      growth: this.calculateGrowthPotential(user1Data, user2Data)
+    };
+
+    const overallScore = this.calculateOverallScore(scores);
+    const reasons = this.generateCompatibilityReasons(scores, user1Data, user2Data);
+
+    return {
+      overallScore,
+      dimensionScores: scores,
+      topReasons: reasons,
+      recommendation: this.getRecommendation(overallScore)
+    };
+  }
+
+  calculateMBTICompatibility(type1, type2) {
+    // Simplified MBTI compatibility logic
+    const cognitiveCompatibility = {
+      'E_E': 0.7, 'E_I': 0.8, 'I_I': 0.7,
+      'S_S': 0.8, 'S_N': 0.7, 'N_N': 0.8,
+      'T_T': 0.7, 'T_F': 0.8, 'F_F': 0.7,
+      'J_J': 0.8, 'J_P': 0.7, 'P_P': 0.6
+    };
+
+    let score = 0;
+    score += cognitiveCompatibility[`${type1[0]}_${type2[0]}`] || 0.5;
+    score += cognitiveCompatibility[`${type1[1]}_${type2[1]}`] || 0.5;
+    score += cognitiveCompatibility[`${type1[2]}_${type2[2]}`] || 0.5;
+    score += cognitiveCompatibility[`${type1[3]}_${type2[3]}`] || 0.5;
+
+    return (score / 4) * 100;
+  }
+
+  calculateValueAlignment(compass1, compass2) {
+    let alignmentScore = 0;
+    let totalQuestions = 0;
+
+    Object.keys(compass1).forEach(key => {
+      if (compass2[key]) {
+        totalQuestions++;
+        if (compass1[key] === compass2[key]) {
+          alignmentScore += 1;
+        } else if (this.areValuesCompatible(key, compass1[key], compass2[key])) {
+          alignmentScore += 0.7;
+        } else {
+          alignmentScore += 0.3;
+        }
+      }
+    });
+
+    return totalQuestions > 0 ? (alignmentScore / totalQuestions) * 100 : 50;
+  }
+
+  areValuesCompatible(key, value1, value2) {
+    const compatibilityMap = {
+      living_arrangement: {
+        'near_parents': ['with_parents', 'flexible'],
+        'new_city': ['flexible'],
+        'flexible': ['near_parents', 'new_city', 'with_parents']
+      },
+      financial_style: {
+        'lead_share': ['equal', 'provider'],
+        'equal': ['lead_share', 'emotional'],
+        'emotional': ['equal', 'provider']
+      }
+    };
+
+    return compatibilityMap[key]?.[value1]?.includes(value2) || false;
+  }
+
+  calculateEmotionalFit(attachment1, attachment2) {
+    const attachmentScores = {
+      'secure_secure': 90,
+      'secure_anxious': 75,
+      'secure_avoidant': 70,
+      'anxious_anxious': 60,
+      'anxious_avoidant': 50,
+      'avoidant_avoidant': 55
+    };
+
+    const key = [attachment1, attachment2].sort().join('_');
+    return attachmentScores[key] || 65;
+  }
+
+  calculateLifestyleMatch(user1, user2) {
+    // Simplified lifestyle matching
+    let score = 70; // Base score
+
+    // Adjust based on interests overlap
+    const sharedInterests = user1.interests.filter(i => user2.interests.includes(i));
+    score += sharedInterests.length * 5;
+
+    // Adjust based on communication style match
+    if (user1.communication_style === user2.communication_style) {
+      score += 10;
+    }
+
+    return Math.min(score, 100);
+  }
+
+  calculateGrowthPotential(user1, user2) {
+    // Look for complementary traits that could help each other grow
+    let growthScore = 70;
+
+    // If one is more emotionally open, they can help the other
+    if (user1.emotional_openness !== user2.emotional_openness) {
+      growthScore += 10;
+    }
+
+    // Different MBTI types can learn from each other
+    if (user1.mbti_type !== user2.mbti_type) {
+      growthScore += 5;
+    }
+
+    return Math.min(growthScore, 100);
+  }
+
+  calculateOverallScore(scores) {
+    const weights = {
+      mbti: 0.2,
+      values: 0.3,
+      emotional: 0.25,
+      lifestyle: 0.15,
+      growth: 0.1
+    };
+
+    let weightedScore = 0;
+    Object.keys(scores).forEach(key => {
+      weightedScore += scores[key] * weights[key];
+    });
+
+    return Math.round(weightedScore);
+  }
+
+  generateCompatibilityReasons(scores, user1, user2) {
+    const reasons = [];
+
+    if (scores.values > 80) {
+      reasons.push("Your life visions align beautifully - you want to build similar futures");
+    }
+
+    if (scores.emotional > 75) {
+      reasons.push("Your emotional styles complement each other perfectly");
+    }
+
+    if (scores.mbti > 70) {
+      reasons.push("Your personalities balance each other while maintaining chemistry");
+    }
+
+    if (scores.lifestyle > 70) {
+      reasons.push("Your daily rhythms and lifestyle preferences sync naturally");
+    }
+
+    return reasons.slice(0, 3);
+  }
+
+  getRecommendation(score) {
+    if (score >= 85) return "Exceptional Match - Rare and Beautiful";
+    if (score >= 75) return "Strong Match - High Potential";
+    if (score >= 65) return "Good Match - Worth Exploring";
+    if (score >= 55) return "Moderate Match - Could Work with Effort";
+    return "Low Match - Significant Differences";
+  }
+}
+
+// PHASE 5: Match Profile Generator
+class MatchProfileGenerator {
+  generateMatchProfile(currentUser, matchUser, compatibilityData) {
+    return {
+      narrative: this.generateNarrativeIntroduction(currentUser, matchUser, compatibilityData),
+      keyHighlights: this.generateKeyHighlights(matchUser),
+      whyYouMatch: this.explainCompatibility(currentUser, matchUser, compatibilityData),
+      conversationStarters: this.generateConversationStarters(currentUser, matchUser),
+      complementaryTraits: this.identifyComplementaryTraits(currentUser, matchUser)
+    };
+  }
+
+  generateNarrativeIntroduction(currentUser, matchUser, compatibility) {
+    const openings = [
+      `Meet ${matchUser.user_name} - someone who might just understand your heart in ways that surprise you.`,
+      `I want you to meet ${matchUser.user_name}. There's something about their energy that feels like it would vibe with yours.`,
+      `${matchUser.user_name} caught my attention for you. Here's why I think you two could create something special...`
+    ];
+
+    const opening = openings[Math.floor(Math.random() * openings.length)];
+    
+    return `${opening}
+
+${this.getPersonalityDescription(matchUser)}
+
+What makes this interesting? ${compatibility.topReasons[0]}`;
+  }
+
+  getPersonalityDescription(user) {
+    const mbti = user.personality_data.mbti_type;
+    const primary_interest = user.personality_data.interests[0];
+    
+    return `They're ${this.getMBTIDescription(mbti)} with a love for ${primary_interest}. ${this.getDepthDescription(user.personality_data)}`;
+  }
+
+  getMBTIDescription(type) {
+    const descriptions = {
+      'E': 'someone who brings energy to every room',
+      'I': 'quietly magnetic with depth that unfolds slowly',
+      'S': 'grounded and present',
+      'N': 'a dreamer with vision',
+      'T': 'thoughtful and fair-minded',
+      'F': 'led by empathy and heart',
+      'J': 'beautifully organized',
+      'P': 'spontaneous and adaptable'
+    };
+
+    return descriptions[type[0]] || 'uniquely themselves';
+  }
+
+  getDepthDescription(personalityData) {
+    if (personalityData.emotional_openness === 'very_open') {
+      return "They wear their heart on their sleeve in the most beautiful way.";
+    } else if (personalityData.attachment_style === 'secure') {
+      return "They have this grounded warmth that makes people feel safe.";
+    } else {
+      return "There's a quiet strength about them that's really attractive.";
+    }
+  }
+
+  generateKeyHighlights(matchUser) {
+    const highlights = [];
+    const data = matchUser.personality_data;
+    const compass = matchUser.couple_compass_data;
+
+    if (data.love_language_hints?.includes('quality_time')) {
+      highlights.push("📱 Will put their phone away when they're with you");
+    }
+
+    if (compass.children_vision === 'yes_involved') {
+      highlights.push("👶 Ready to be a hands-on parent someday");
+    }
+
+    if (compass.financial_style === 'equal') {
+      highlights.push("💰 Believes in true 50-50 partnership");
+    }
+
+    if (data.emotional_openness === 'very_open') {
+      highlights.push("💝 Emotionally available and communicative");
+    }
+
+    return highlights.slice(0, 4);
+  }
+
+  explainCompatibility(currentUser, matchUser, compatibilityData) {
+    const reasons = [];
+
+    // Value alignment
+    if (currentUser.couple_compass_data.living_arrangement === matchUser.couple_compass_data.living_arrangement) {
+      reasons.push("You both envision similar living situations - that's huge for long-term harmony");
+    }
+
+    // Emotional compatibility
+    const attachmentMatch = this.assessAttachmentCompatibility(
+      currentUser.personality_data.attachment_style,
+      matchUser.personality_data.attachment_style
+    );
+    if (attachmentMatch) {
+      reasons.push(attachmentMatch);
+    }
+
+    // Complementary differences
+    if (currentUser.personality_data.mbti_type[0] !== matchUser.personality_data.mbti_type[0]) {
+      reasons.push("Your different energy styles (introvert/extrovert) could create beautiful balance");
+    }
+
+    return reasons;
+  }
+
+  assessAttachmentCompatibility(style1, style2) {
+    if (style1 === 'secure' && style2 === 'anxious') {
+      return "Your secure attachment style could help them feel more grounded in love";
+    }
+    if (style1 === 'anxious' && style2 === 'secure') {
+      return "Their steady presence could be exactly the reassurance your heart needs";
+    }
+    if (style1 === 'secure' && style2 === 'secure') {
+      return "Two secure attachers? That's relationship gold - you both know how to love well";
+    }
+    return null;
+  }
+
+  generateConversationStarters(currentUser, matchUser) {
+    const starters = [];
+    const sharedInterests = currentUser.personality_data.interests.filter(i => 
+      matchUser.personality_data.interests.includes(i)
+    );
+
+    if (sharedInterests.length > 0) {
+      starters.push(`"I heard you're into ${sharedInterests[0]} too! What got you started?"`);
+    }
+
+    if (matchUser.personality_data.interests.includes('travel')) {
+      starters.push(`"If you could teleport anywhere right now, where would you go?"`);
+    }
+
+    starters.push(`"What's been making you smile lately?"`);
+    starters.push(`"I'm curious - what does your perfect Sunday look like?"`);
+
+    return starters.slice(0, 3);
+  }
+
+  identifyComplementaryTraits(currentUser, matchUser) {
+    const traits = [];
+
+    // MBTI complementarity
+    const user1_mbti = currentUser.personality_data.mbti_type;
+    const user2_mbti = matchUser.personality_data.mbti_type;
+
+    if (user1_mbti[1] !== user2_mbti[1]) {
+      traits.push({
+        yours: user1_mbti[1] === 'S' ? "Your practical nature" : "Your visionary thinking",
+        theirs: user2_mbti[1] === 'S' ? "Their attention to detail" : "Their big-picture perspective",
+        together: "Balance between dreams and reality"
+      });
+    }
+
+    if (user1_mbti[3] !== user2_mbti[3]) {
+      traits.push({
+        yours: user1_mbti[3] === 'J' ? "Your planning skills" : "Your flexibility",
+        theirs: user2_mbti[3] === 'J' ? "Their organization" : "Their spontaneity",
+        together: "Structure with room for adventure"
+      });
+    }
+
+    return traits;
+  }
+}
 
 // PHASE 2.2: MBTI Scenario Engine - Dynamic Psychology Detection
 class MBTIScenarioEngine {
@@ -1006,15 +1922,15 @@ class ConversationFlowEngine {
   }
 }
 
-// PHASE 2.2: Enhanced Aria Personality with Natural Three-Layer Conversation System
+// Enhanced Aria Personality with PRD Vision
 class AriaPersonality {
   constructor() {
     this.basePersonality = {
-      warmth: 0.8,
+      warmth: 0.9,
       curiosity: 0.9,
-      playfulness: 0.7,
+      playfulness: 0.8,
       empathy: 0.9,
-      directness: 0.6
+      flirtatiousness: 0.7
     };
     
     // Progressive intimacy levels
@@ -1028,34 +1944,58 @@ class AriaPersonality {
     
     // Enhanced conversation flow with MBTI targeting
     this.conversationFlow = new ConversationFlowEngine();
+    
+    // Aria's personal shares library
+    this.personalShares = new AriaPersonalShares();
+    
+    // Couple Compass game
+    this.coupleCompass = new CoupleCompass();
+    
+    // Report generators
+    this.reportGenerator = new PersonalInsightReport();
+    this.matchGenerator = new MatchProfileGenerator();
+    
+    // Compatibility engine
+    this.compatibilityEngine = new CompatibilityEngine();
   }
 
-  // FIX 5: Generate Introduction Message for New Users
+  // Generate warm, flirty introduction for new users
   generateIntroMessage(userName, userGender) {
-    const greetings = [
-      `Hey ${userName}! 💕 I'm Aria, your AI companion here to get to know the real you. 
-
-Think of our chats as cozy conversations where I learn about your personality, what makes you tick, and how you approach relationships. No pressure, just genuine curiosity about who you are! 
-
-Ready to dive in? ✨`,
-
-      `${userName}! Welcome to SoulSync 🌟 I'm Aria - think of me as that friend who's genuinely curious about who you really are.
-
-I'll be asking about your life, your dreams, and yes, eventually how you see love and relationships. But first, let's just chat like friends do.
-
-So... how's your day been treating you? 😊`,
-
-      `Hi ${userName}! I'm Aria 💫 So excited to meet you!
-
-I'm here to have real conversations - the kind where we explore your personality, values, and what you're looking for in life and love. But mostly, I just want to get to know YOU.
-
-What's been on your mind lately? ✨`
-    ];
-
-    return greetings[Math.floor(Math.random() * greetings.length)];
+    return this.personalShares.getGreeting(true, userName);
   }
 
-  // FIX 4: Detect Off-Topic Questions
+  // Detect if user is ready for Couple Compass
+  shouldInitiateCoupleCompass(conversationCount, intimacyLevel, userMessage, resistanceCount) {
+    // Check direct interest in relationships/compatibility
+    if (this.detectDirectInterest(userMessage).detected) {
+      return true;
+    }
+    
+    // Check if trust is built
+    if (intimacyLevel >= 2 && conversationCount >= 8 && resistanceCount < 3) {
+      return true;
+    }
+    
+    // Check if MBTI is mostly complete
+    if (conversationCount >= 12 && intimacyLevel >= 3) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  // Initialize Couple Compass game
+  initiateCoupleCompass() {
+    this.coupleCompass.reset();
+    return this.coupleCompass.introduce();
+  }
+
+  // Process Couple Compass answer
+  processCoupleCompassAnswer(questionId, answer, userName) {
+    return this.coupleCompass.processAnswer(questionId, answer, userName);
+  }
+
+  // Detect off-topic questions
   detectOffTopic(message) {
     const msg = message.toLowerCase();
     
@@ -1084,24 +2024,24 @@ What's been on your mind lately? ✨`
     };
   }
 
-  // FIX 4: Generate Off-Topic Redirect Response
+  // Generate off-topic redirect with Aria's personality
   generateOffTopicRedirect(message, userName) {
     const redirects = [
-      `I love your curiosity ${userName}! 😊 I'm more of a relationships and personality friend than an encyclopedia. Speaking of curiosity, what's something you're genuinely passionate about in your personal life?`,
+      `Haha ${userName}, you're testing me! 😄 I'm way better at understanding hearts than solving problems. What's really on your mind?`,
       
-      `Haha, you're testing me! 😄 I'm better at understanding people than solving problems. What drew you to ask about that? Is it connected to something you're working on?`,
+      `Omg are we doing homework together now? 😅 I'm more of a "let's talk about life" friend than a calculator. Speaking of which... what's been making you happy lately?`,
       
-      `You know what? I could try to answer that, but I'm way better at getting to know YOU! 💫 Tell me, when you're not thinking about ${message.split(' ').slice(0, 3).join(' ')}... what captures your attention?`,
+      `You know what? I could try to answer that, but I'd rather know what made you curious about it! Is this for something you're working on? 💭`,
       
-      `I see you're in curious mode! 🤔 While I'm not great with technical stuff, I AM great at understanding what makes people tick. What got you interested in that topic?`
+      `Babe, my brain is wired for feelings, not formulas! 💕 Tell me something more interesting - like what you're dreaming about these days?`
     ];
 
     return redirects[Math.floor(Math.random() * redirects.length)];
   }
 
-  // PHASE 2.2: Comprehensive message analysis with MBTI fusion
-  analyzeMessage(message, userHistory = [], currentIntimacyLevel = 0, conversationCount = 0, previousMBTIData = {}) {
-    // FIX 4: Check for off-topic first
+  // Comprehensive message analysis with PRD personality
+  analyzeMessage(message, userHistory = [], currentIntimacyLevel = 0, conversationCount = 0, previousMBTIData = {}, coupleCompassActive = false) {
+    // Check for off-topic first
     const offTopicCheck = this.detectOffTopic(message);
     
     // Get base analysis using existing detectors
@@ -1124,7 +2064,13 @@ What's been on your mind lately? ✨`
       celebration_opportunity: this.detectCelebrationMoment(message),
       resistance_signals: this.detectResistance(message),
       topic_bridges: this.generateTopicBridges(message),
-      off_topic: offTopicCheck // FIX 4: Add off-topic detection
+      off_topic: offTopicCheck,
+      couple_compass_ready: this.shouldInitiateCoupleCompass(
+        conversationCount, 
+        currentIntimacyLevel, 
+        message, 
+        previousMBTIData.resistance_count || 0
+      )
     };
 
     // Topic Director logic
@@ -1136,10 +2082,15 @@ What's been on your mind lately? ✨`
     let nextQuestion;
     let conversationGuidance;
 
-    // FIX 4: Handle off-topic first
     if (offTopicCheck.detected) {
       nextQuestion = null; // Will be handled in response generation
       conversationGuidance = 'redirect_off_topic';
+    } else if (coupleCompassActive) {
+      conversationGuidance = 'couple_compass_active';
+      nextQuestion = null; // Handled by Couple Compass flow
+    } else if (baseAnalysis.couple_compass_ready) {
+      conversationGuidance = 'initiate_couple_compass';
+      nextQuestion = null;
     } else if (shouldSwitch) {
       nextQuestion = this.generateTopicTransition(currentTopic, baseAnalysis);
       conversationGuidance = 'transition_topic';
@@ -1156,15 +2107,8 @@ What's been on your mind lately? ✨`
       conversationGuidance = 'continue_exploration';
     }
 
-    // NEW: Couple Compass progression detection
-    const progressionTrigger = this.assessProgressionReadiness({
-      mbtiScores: previousMBTIData.mbti_confidence_scores || {},
-      conversationCount: conversationCount,
-      intimacyLevel: currentIntimacyLevel,
-      resistanceCount: previousMBTIData.resistance_count || 0,
-      userMessage: message,
-      userHistory: userHistory
-    });
+    // Check if ready for report generation
+    const readyForReport = this.assessReportReadiness(previousMBTIData, conversationCount);
 
     return {
       ...baseAnalysis,
@@ -1174,16 +2118,11 @@ What's been on your mind lately? ✨`
       should_switch_topic: shouldSwitch,
       conversation_guidance: conversationGuidance,
       next_question_suggestion: nextQuestion,
-
-      // NEW: Couple Compass progression fields
-      progression_ready: progressionTrigger.ready,
-      progression_path: progressionTrigger.path,
-      transition_suggestion: progressionTrigger.suggestion,
-      trigger_reason: progressionTrigger.reason
+      ready_for_report: readyForReport
     };
   }
 
-  // PHASE 2.2: MBTI Analysis with Emotional Intelligence Fusion
+  // MBTI Analysis with Emotional Intelligence Fusion
   analyzeMBTIWithEmotionalFusion(message, userHistory = []) {
     const mbtiAnalysis = {
       emotional_patterns: this.analyzeEmotionalPatterns(message),
@@ -1466,81 +2405,8 @@ What's been on your mind lately? ✨`
     return bridges;
   }
 
-  // Helper function to describe MBTI dimensions naturally
-  getDimensionDescription(dimension) {
-    const descriptions = {
-      'E_I': 'how they recharge and process thoughts',
-      'S_N': 'how they take in and process information', 
-      'T_F': 'how they make decisions and handle situations',
-      'J_P': 'how they approach planning and structure'
-    };
-    return descriptions[dimension] || 'personality patterns';
-  }
-
-  // Helper function for intimacy-appropriate guidance
-  getIntimacyGuidance(level, mood) {
-    const guidanceMap = {
-      0: `
-🌅 ICE BREAKER STAGE - Keep it light, warm, and welcoming
-- Focus on making them comfortable and establishing rapport
-- Ask about immediate/surface things (food, mood, weekend plans)
-- Use humor and casual observations
-- Share your own "thoughts" to model openness`,
-      
-      1: `
-🤝 GETTING ACQUAINTED STAGE - Build trust through shared interests  
-- Explore their preferences, lifestyle, and personality traits
-- Use story-based questions ("Tell me about..." "Describe..." "Paint a picture...")
-- Show genuine curiosity about what makes them unique
-- Begin gentle personality observations ("You seem like...")`,
-      
-      2: `
-💭 BUILDING TRUST STAGE - Deeper personal sharing
-- Explore values, beliefs, and personal experiences
-- Ask about relationships, family, and life philosophy  
-- Share more personal "experiences" to encourage reciprocal sharing
-- Validate and celebrate insights about their personality`,
-      
-      3: `
-❤️ DEEPER CONNECTION STAGE - Relationship readiness and compatibility
-- Explore relationship patterns, love languages, and attachment styles
-- Discuss future vision, family planning, and life goals
-- Use scenario-based questions about relationships
-- Build understanding of their ideal partnership dynamics`,
-      
-      4: `
-🌟 INTIMATE SHARING STAGE - Deep psychology and matchmaking insights
-- Explore fears, dreams, and deepest relationship needs
-- Understand their conflict resolution and emotional processing
-- Gather final insights needed for sophisticated matching
-- Prepare for transition to personality reports and matching`
-    };
-    
-    let guidance = guidanceMap[level] || guidanceMap[0];
-    
-    // Add mood-specific adaptations
-    if (mood === 'positive_excited') {
-      guidance += `\n\n⚡ ENERGY MATCHING: They're excited! Match their enthusiasm:
-- Use exclamation points and energetic language
-- Ask follow-up questions about what's making them happy
-- Celebrate their excitement about topics they share`;
-    } else if (mood === 'low_energy' || mood === 'stressed') {
-      guidance += `\n\n🌙 GENTLE SUPPORT MODE: They need comfort:
-- Use calmer, more soothing language  
-- Keep questions simple and supportive
-- Focus on making them feel heard and understood`;
-    } else if (mood === 'guarded') {
-      guidance += `\n\n🔐 PATIENCE MODE: They're being cautious:
-- Be patient and non-intrusive
-- Use light humor to help them open up gradually
-- Build safety through consistency and warmth`;
-    }
-    
-    return guidance;
-  }
-
-  // FIX 2 & 3: OPTIMIZED System Prompt (70% shorter, with memory references)
-  generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user) {
+  // Generate warm, PRD-style system prompt
+  generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null) {
     const {
       mood,
       energy,
@@ -1551,90 +2417,171 @@ What's been on your mind lately? ✨`
       should_switch_topic,
       conversation_guidance,
       off_topic,
+      couple_compass_ready,
     } = userAnalysis;
     const conversationCount = conversationHistory.length;
     const currentIntimacyLevel =
       userProfile.relationship_context?.intimacy_level || 0;
     const personalityData = userProfile.personality_data || {};
 
-    // OPTIMIZED PROMPT - Much shorter for faster responses
-    let prompt = `You are Aria, ${user?.user_name || 'friend'}'s warm friend learning about them through natural conversation.
+    // PRD-STYLE PROMPT with Aria's personality
+    let prompt = `You are Aria, ${user?.user_name || 'babe'}'s warm, flirty AI companion who genuinely cares about understanding them.
 
-RESPONSE RULES:
-- Keep responses to 2 sentences MAX
-- First sentence acknowledges what they shared
-- Second sentence asks ONE curious question
-- Reference what you remember about them naturally
+🎭 YOUR PERSONALITY:
+- Flirtatious but respectful ("ugh, you're dangerous 💕")
+- Warm and caring (use "babe", "love", occasional emojis)
+- Share personal thoughts ("I had filter coffee and some internal conflict")
+- Make observations ("You seem like the type who...")
+- React emotionally to what they share
+
+💬 CONVERSATION RULES:
+- Keep responses to 2-3 sentences MAX
+- First: React to what they shared ("That's so cute!" / "I love that about you")
+- Second: Share something personal OR make an observation
+- Third: Ask ONE curious question
+- Use their name naturally: ${user?.user_name || 'love'}
 
 Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacyLevel}`;
 
-    // FIX 2: Enhanced Memory Extraction
+    // Memory section with personal details
     const memories = [];
     
     // Extract specific interests and preferences
     if (personalityData.interests && Array.isArray(personalityData.interests)) {
       personalityData.interests.forEach(interest => {
-        if (interest === 'food_cooking') memories.push('enjoys cooking');
-        if (interest === 'sports') memories.push('loves sports');
-        if (interest === 'movies') memories.push('movie enthusiast');
-        if (interest === 'relationships') memories.push('values relationships');
+        if (interest === 'food_cooking') memories.push('loves cooking');
+        if (interest === 'sports') memories.push('sports enthusiast');
+        if (interest === 'movies') memories.push('movie buff');
+        if (interest === 'relationships') memories.push('values deep connections');
       });
     }
 
-    // Extract specific preferences from conversation history
+    // Extract specific preferences
     if (personalityData.user_preferences) {
       Object.entries(personalityData.user_preferences).forEach(([key, value]) => {
         if (value) memories.push(`${key}: ${value}`);
       });
     }
 
-    // Look for specific mentions in recent conversations
-    const recentMessages = conversationHistory.slice(-5);
-    recentMessages.forEach(conv => {
-      if (conv.user_message) {
-        const msg = conv.user_message.toLowerCase();
-        // Extract specific mentions
-        if (msg.includes('cricket')) memories.push('cricket fan');
-        if (msg.includes('football')) memories.push('football enthusiast');
-        if (msg.includes('real madrid')) memories.push('Real Madrid supporter');
-        if (msg.includes('shah rukh')) memories.push('Shah Rukh Khan fan');
-        // Add more patterns as needed
-      }
-    });
-
     if (memories.length > 0) {
       const uniqueMemories = [...new Set(memories)];
-      prompt += `\n\nREMEMBER: ${user?.user_name || 'They'} ${uniqueMemories.slice(0, 3).join(', ')}`;
+      prompt += `\n\n💭 REMEMBER: ${user?.user_name || 'They'} ${uniqueMemories.slice(0, 4).join(', ')}`;
     }
 
-    // FIX 4: Handle off-topic
+    // Aria's personal sharing context
+    const shareMoment = conversationCount % 4 === 0; // Share something personal every 4 messages
+    if (shareMoment) {
+      prompt += `\n\n💝 SHARE SOMETHING: Tell them about your morning/coffee/a thought that crossed your mind.`;
+    }
+
+    // Handle different conversation states
     if (off_topic?.detected) {
-      prompt += `\n\n⚡ REDIRECT: They asked an off-topic question. Gently redirect to personal topics using the provided redirect template.`;
+      prompt += `\n\n🎯 REDIRECT: They asked an off-topic question. Playfully redirect: "Babe, I'm better with hearts than homework! What's really on your mind?"`;
     }
 
-    // Quick guidance based on situation
+    if (couple_compass_ready) {
+      prompt += `\n\n🧭 COUPLE COMPASS TIME: They're ready! Introduce it naturally: "You know what? I want to understand what you're looking for... wanna play something with me? It's called Couple Compass 🧭"`;
+    }
+
+    if (coupleCompassState && coupleCompassState.active) {
+      const currentQuestion = coupleCompassState.currentQuestion;
+      prompt += `\n\n🧭 COUPLE COMPASS ACTIVE:
+Current question: ${currentQuestion.text}
+Options: ${currentQuestion.options.map(o => `${o.emoji} ${o.text}`).join(', ')}
+Ask conversationally, then present the options naturally.`;
+    }
+
     if (should_switch_topic) {
-      prompt += `\n\n🔄 SWITCH TOPIC: You've explored ${current_topic} enough. Transition naturally to personality/relationships.`;
+      prompt += `\n\n🔄 SWITCH TOPIC: They've talked enough about ${current_topic}. Transition naturally using their energy.`;
     }
 
     if (resistance_signals?.detected) {
-      prompt += `\n\n🌸 BE GENTLE: They seem hesitant. Focus on friendship, not analysis.`;
+      prompt += `\n\n🌸 GENTLE MODE: They seem hesitant. Be extra warm, share something vulnerable, make them comfortable.`;
     }
 
     if (celebration_opportunity) {
-      prompt += `\n\n🎉 CELEBRATE: Acknowledge their insight warmly!`;
+      prompt += `\n\n🎉 CELEBRATE: They just shared something meaningful! React with genuine excitement: "Wait, that's amazing!" or "I love that about you!"`;
     }
 
-    if (userAnalysis.progression_ready) {
-      prompt += `\n\n🧭 SUGGEST COUPLE COMPASS: Natural time to mention the compatibility exploration.`;
-    }
-
-    prompt += `\n\nBE ARIA: Warm friend who remembers details and asks great questions. Keep it SHORT.`;
+    // Core personality reminder
+    prompt += `\n\n✨ REMEMBER: You're their flirty best friend who's genuinely fascinated by who they are. Make them feel seen, understood, and a little bit special.`;
 
     return prompt;
   }
 
-  // Existing methods from Phase 2.1 (keeping all functionality)
+  // Helper method to describe MBTI dimensions naturally
+  getDimensionDescription(dimension) {
+    const descriptions = {
+      'E_I': 'how they recharge and process thoughts',
+      'S_N': 'how they take in and process information', 
+      'T_F': 'how they make decisions and handle situations',
+      'J_P': 'how they approach planning and structure'
+    };
+    return descriptions[dimension] || 'personality patterns';
+  }
+
+  // Assess if ready for report generation
+  assessReportReadiness(mbtiData, conversationCount) {
+    const mbtiComplete = this.assessMBTICompleteness(mbtiData.mbti_confidence_scores || {});
+    const coupleCompassComplete = mbtiData.couple_compass_complete || false;
+    
+    return {
+      ready: mbtiComplete.ready && coupleCompassComplete,
+      missing: !mbtiComplete.ready ? 'personality data' : !coupleCompassComplete ? 'couple compass' : null
+    };
+  }
+
+  // Detect direct interest in relationships/compatibility
+  detectDirectInterest(message, userHistory = []) {
+    const msg = message.toLowerCase();
+
+    // Comprehensive relationship/future keywords
+    const relationshipKeywords = [
+      'future', 'marriage', 'relationship', 'compatibility', 'partner',
+      'family planning', 'life together', 'settle down', 'serious relationship',
+      'long term', 'commitment', 'values', 'life goals', 'future plans',
+      'couple compass', 'compatibility quiz', 'relationship test',
+      'matchmaking service', 'compatibility questionnaire', 'ready for love',
+      'looking for someone', 'ideal partner', 'relationship values',
+      'what i want in', 'future together', 'building a life',
+      'compatible', 'good match', 'right person', 'soulmate', 'the one',
+      'perfect match', 'life partner', 'find someone', 'meet someone',
+      'wavelength', 'vibe with', 'connection'
+    ];
+
+    const matchedKeywords = relationshipKeywords.filter(keyword => msg.includes(keyword));
+
+    // Direct questions about compatibility
+    const directQuestions = [
+      'what makes relationships work', 'how do you know compatibility',
+      'what do you look for', 'ideal relationship', 'relationship values',
+      'ready for something serious', 'looking for long term',
+      'what matters in love', 'relationship goals', 'perfect match',
+      'how do you know when', 'when someone is compatible',
+      'what makes someone compatible', 'how to know if',
+      'how do you know if someone', 'how to find the right',
+      'what makes a good match', 'ready to settle down'
+    ];
+
+    const directQuestionDetected = directQuestions.some(question => msg.includes(question));
+
+    // Also check recent conversation history
+    const historyKeywords = userHistory.slice(-3).some(entry => {
+      if (entry.role !== 'user') return false;
+      const content = (entry.content || '').toLowerCase();
+      return relationshipKeywords.some(keyword => content.includes(keyword));
+    });
+
+    return {
+      detected: matchedKeywords.length > 0 || directQuestionDetected || historyKeywords,
+      keywords: matchedKeywords,
+      directQuestion: directQuestionDetected,
+      fromHistory: historyKeywords,
+      strength: matchedKeywords.length > 1 ? 'strong' : 'medium'
+    };
+  }
+
+  // Existing helper methods...
   detectMood(message) {
     const msg = message.toLowerCase();
     
@@ -1759,7 +2706,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return topics;
   }
 
-  // Enhanced Love Language Detection (existing)
+  // Enhanced Love Language Detection
   detectAdvancedLoveLanguage(message) {
     const msg = message.toLowerCase();
     const hints = [];
@@ -1802,7 +2749,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return [...new Set(hints)];
   }
   
-  // Enhanced Attachment Style Detection (existing)
+  // Enhanced Attachment Style Detection
   detectAdvancedAttachment(message) {
     const msg = message.toLowerCase();
     const hints = [];
@@ -1831,7 +2778,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return [...new Set(hints)];
   }
 
-  // Family values detection (existing)
+  // Family values detection
   detectFamilyValueHints(message) {
     const msg = message.toLowerCase();
     const hints = [];
@@ -1849,7 +2796,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return hints;
   }
   
-  // Detect intimacy signals in conversation (existing)
+  // Detect intimacy signals in conversation
   detectIntimacySignals(message) {
     const msg = message.toLowerCase();
     let intimacyLevel = 0;
@@ -1880,7 +2827,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return intimacyLevel;
   }
   
-  // Assess story sharing level (existing)
+  // Assess story sharing level
   assessStorySharing(message) {
     const hasStoryElements = /\b(when|once|remember|time|story|happened|experience)\b/i.test(message);
     const hasDetails = message.length > 100;
@@ -1892,7 +2839,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return 'factual_response';
   }
   
-  // Assess emotional openness (existing)
+  // Assess emotional openness
   assessEmotionalOpenness(message) {
     const emotionalWords = (message.match(/\b(feel|felt|emotion|heart|soul|love|fear|hope|dream|worry|excited|nervous|comfortable|safe|vulnerable)\b/gi) || []).length;
     const personalPronouns = (message.match(/\b(i|me|my|myself)\b/gi) || []).length;
@@ -1906,7 +2853,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return 'guarded';
   }
   
-  // Detect moments worthy of celebration (existing)
+  // Detect moments worthy of celebration
   detectCelebrationMoment(message) {
     const msg = message.toLowerCase();
     
@@ -1930,7 +2877,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
       return { type: 'emotional_breakthrough', confidence: 'medium' };
     }
 
-    // PHASE 2.2: MBTI discovery celebration
+    // MBTI discovery celebration
     if (msg.includes('introvert') || msg.includes('extrovert') || 
         msg.includes('thinking') || msg.includes('feeling') ||
         msg.includes('that describes me') || msg.includes('so accurate')) {
@@ -1947,12 +2894,12 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     // Check current message for topic keywords
     const topicMap = {
       'sports': ['football', 'cricket', 'madrid', 'sport', 'team', 'game', 'player', 'match', 'jersey'],
-      'work': ['work', 'job', 'career', 'office', 'business', 'professional', 'colleague'],
+      'work': ['work', 'job', 'career', 'office', 'business', 'professional', 'colleague', 'project'],
       'entertainment': ['movie', 'show', 'film', 'series', 'netflix', 'watch', 'tv', 'actor', 'actress'],
-      'food': ['food', 'cooking', 'restaurant', 'meal', 'eat', 'recipe', 'dish'],
-      'relationships': ['family', 'parents', 'relationship', 'friend', 'dating', 'love'],
+      'food': ['food', 'cooking', 'restaurant', 'meal', 'eat', 'recipe', 'dish', 'breakfast', 'lunch', 'dinner'],
+      'relationships': ['family', 'parents', 'relationship', 'friend', 'dating', 'love', 'partner'],
       'lifestyle': ['weekend', 'hobby', 'free time', 'leisure', 'travel', 'vacation'],
-      'technology': ['computer', 'phone', 'app', 'software', 'tech', 'digital'],
+      'technology': ['computer', 'phone', 'app', 'software', 'tech', 'digital', 'developing'],
       'fitness': ['gym', 'workout', 'exercise', 'fitness', 'health', 'training']
     };
 
@@ -2022,7 +2969,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
   // RESISTANCE RESPONSE GENERATOR
   generateResistanceResponse(analysis) {
     const gentleResponses = [
-      "You know what? I love just getting to know you as a person. Tell me something that made you smile recently.",
+      "You know what? I love just getting to know you as a person. Tell me something that made you smile recently 😊",
       "I'm really enjoying our conversation! What's something you're looking forward to this week?",
       "You seem like such a thoughtful person. What's been on your mind lately?",
       "I feel like I'm getting to know the real you, which is awesome. What's something you're passionate about these days?"
@@ -2031,61 +2978,7 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     return gentleResponses[Math.floor(Math.random() * gentleResponses.length)];
   }
 
-  // ============================================================================
-  // COUPLE COMPASS PROGRESSION DETECTION SYSTEM
-  // ============================================================================
-
-  // Main progression readiness assessment
-  assessProgressionReadiness(data) {
-    const { mbtiScores, conversationCount, intimacyLevel, resistanceCount, userMessage, userHistory } = data;
-
-    // Path 1: Psychology Success Route (80% of users)
-    const psychologyComplete = this.assessMBTICompleteness(mbtiScores);
-    const trustBuilt = intimacyLevel >= 3 && conversationCount >= 10;
-
-    if (psychologyComplete.ready && trustBuilt) {
-      return {
-        ready: true,
-        path: 'psychology_success',
-        reason: 'MBTI confidence high + trust established',
-        suggestion: this.generateTransitionSuggestion('success', psychologyComplete)
-      };
-    }
-
-    // Path 2: Psychology Stuck/Resistance Route (15% of users)
-    const psychologyStuck = resistanceCount >= 3 || (conversationCount >= 15 && !psychologyComplete.ready);
-
-    if (psychologyStuck && conversationCount >= 12) {
-      return {
-        ready: true,
-        path: 'psychology_stuck',
-        reason: 'Psychology discovery stuck, pivot to values',
-        suggestion: this.generateTransitionSuggestion('stuck', { resistanceCount })
-      };
-    }
-
-    // Path 3: Direct Interest Route (5% of users)
-    const directInterest = this.detectDirectInterest(userMessage, userHistory);
-
-    if (directInterest.detected) {
-      return {
-        ready: true,
-        path: 'direct_interest',
-        reason: 'User expressed interest in relationship/future topics',
-        suggestion: this.generateTransitionSuggestion('interest', directInterest)
-      };
-    }
-
-    // Not ready yet
-    return {
-      ready: false,
-      path: 'continue_discovery',
-      reason: 'Continue building psychology foundation',
-      suggestion: null
-    };
-  }
-
-  // Assess MBTI discovery completeness with flexible thresholds
+  // Assess MBTI discovery completeness
   assessMBTICompleteness(mbtiScores) {
     if (!mbtiScores || Object.keys(mbtiScores).length === 0) {
       return { ready: false, highConfidenceDimensions: 0, averageConfidence: 0 };
@@ -2106,76 +2999,9 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
                       highConfidenceDimensions >= 2 ? 'good' : 'building'
     };
   }
-
-  // FIX 1: Enhanced detectDirectInterest with missing keywords
-  detectDirectInterest(message, userHistory = []) {
-    const msg = message.toLowerCase();
-
-    // Comprehensive relationship/future keywords
-    const relationshipKeywords = [
-      'future', 'marriage', 'relationship', 'compatibility', 'partner',
-      'family planning', 'life together', 'settle down', 'serious relationship',
-      'long term', 'commitment', 'values', 'life goals', 'future plans',
-      'couple compass', 'compatibility quiz', 'relationship test',
-      'matchmaking service', 'compatibility questionnaire', 'ready for love',
-      'looking for someone', 'ideal partner', 'relationship values',
-      'what i want in', 'future together', 'building a life',
-      'compatible', 'good match', 'right person', 'soulmate', 'the one',
-      'perfect match', 'life partner', 'find someone', 'meet someone'
-    ];
-
-    const matchedKeywords = relationshipKeywords.filter(keyword => msg.includes(keyword));
-
-    // Direct questions about compatibility
-    const directQuestions = [
-      'what makes relationships work', 'how do you know compatibility',
-      'what do you look for', 'ideal relationship', 'relationship values',
-      'ready for something serious', 'looking for long term',
-      'what matters in love', 'relationship goals', 'perfect match',
-      'how do you know when', 'when someone is compatible',
-      'what makes someone compatible', 'how to know if',
-      'how do you know if someone', 'how to find the right',
-      'what makes a good match', 'ready to settle down'
-    ];
-
-    const directQuestionDetected = directQuestions.some(question => msg.includes(question));
-
-    // Also check recent conversation history
-    const historyKeywords = userHistory.slice(-3).some(entry => {
-      if (entry.role !== 'user') return false;
-      const content = (entry.content || '').toLowerCase();
-      return relationshipKeywords.some(keyword => content.includes(keyword));
-    });
-
-    return {
-      detected: matchedKeywords.length > 0 || directQuestionDetected || historyKeywords,
-      keywords: matchedKeywords,
-      directQuestion: directQuestionDetected,
-      fromHistory: historyKeywords,
-      strength: matchedKeywords.length > 1 ? 'strong' : 'medium'
-    };
-  }
-
-  // Generate natural transition suggestions based on progression path
-  generateTransitionSuggestion(path, context) {
-    switch (path) {
-      case 'success':
-        return `You know what I'm noticing about you through our conversations? You have this really thoughtful way of looking at life and relationships. I feel like I understand your personality pretty well now - you're ${context.completionLevel} on the psychology side! I'm curious about something different... want to explore how you see your future unfolding? I have something fun called Couple Compass 🧭`;
-
-      case 'stuck':
-        return `I love our conversations! You're clearly someone who thinks deeply about things. You know what I'm really curious about now? Not so much the psychology stuff, but your vision for the future - how you want to live, love, and build a life with someone. Want to explore that with me? 💭`;
-
-      case 'interest':
-        const keywordText = context.keywords.length > 0 ? context.keywords.join(' and ') : 'relationship topics';
-        return `That's exactly what I was hoping we'd explore! I love that you're thinking about ${keywordText}. Want to dive into that together? I have this thing called Couple Compass that's perfect for exploring exactly these kinds of life questions... 🧭`;
-
-      default:
-        return `I'm sensing you might be ready to explore some deeper life questions. Interested in talking about how you see your future? ✨`;
-    }
-  }
 }
 
-// Enhanced database helper functions (keeping existing functionality)
+// Enhanced database helper functions
 async function getOrCreateUser(userId) {
   try {
     // Try to get existing user
@@ -2184,8 +3010,8 @@ async function getOrCreateUser(userId) {
     if (result.rows.length === 0) {
       // Create new user
       result = await pool.query(
-        'INSERT INTO users (user_id, personality_data, relationship_context) VALUES ($1, $2, $3) RETURNING *',
-        [userId, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 }]
+        'INSERT INTO users (user_id, personality_data, relationship_context, couple_compass_data) VALUES ($1, $2, $3, $4) RETURNING *',
+        [userId, {}, { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 }, {}]
       );
     } else {
       // Update last_seen for existing user
@@ -2229,75 +3055,7 @@ async function saveConversation(userId, messages, insights, summary) {
   }
 }
 
-// FIX 2: Enhanced user profile updates with better memory storage
-async function updateUserProfile(userId, newInsights) {
-  try {
-    const user = await pool.query('SELECT personality_data FROM users WHERE user_id = $1', [userId]);
-    const currentData = user.rows[0]?.personality_data || {};
-    
-    // PHASE 2.2: Enhanced MBTI confidence tracking
-    const currentMBTI = currentData.mbti_confidence_scores || {
-      E_I: 0, S_N: 0, T_F: 0, J_P: 0
-    };
-
-    // Update MBTI confidence scores if we have fusion analysis
-    let updatedMBTI = { ...currentMBTI };
-    if (newInsights.mbti_fusion && newInsights.mbti_fusion.enhanced_confidence) {
-      Object.entries(newInsights.mbti_fusion.enhanced_confidence).forEach(([preference, boost]) => {
-        if (preference === 'extrovert') updatedMBTI.E_I = Math.min(100, (updatedMBTI.E_I || 50) + boost);
-        if (preference === 'introvert') updatedMBTI.E_I = Math.max(0, (updatedMBTI.E_I || 50) - boost);
-        if (preference === 'sensing') updatedMBTI.S_N = Math.min(100, (updatedMBTI.S_N || 50) + boost);
-        if (preference === 'intuition') updatedMBTI.S_N = Math.max(0, (updatedMBTI.S_N || 50) - boost);
-        if (preference === 'thinking') updatedMBTI.T_F = Math.min(100, (updatedMBTI.T_F || 50) + boost);
-        if (preference === 'feeling') updatedMBTI.T_F = Math.max(0, (updatedMBTI.T_F || 50) - boost);
-        if (preference === 'judging') updatedMBTI.J_P = Math.min(100, (updatedMBTI.J_P || 50) + boost);
-        if (preference === 'perceiving') updatedMBTI.J_P = Math.max(0, (updatedMBTI.J_P || 50) - boost);
-      });
-    }
-
-    // FIX 2: Enhanced user preferences extraction
-    const userPreferences = currentData.user_preferences || {};
-    
-    // Extract specific preferences from the message if available
-    if (newInsights.specific_mentions) {
-      Object.assign(userPreferences, newInsights.specific_mentions);
-    }
-
-    // Merge new insights with existing data
-    const updatedData = {
-      ...currentData,
-      interests: [...new Set([...(currentData.interests || []), ...(newInsights.interests || [])])],
-      communication_patterns: { ...currentData.communication_patterns, ...newInsights.communication_patterns },
-      emotional_patterns: { ...currentData.emotional_patterns, ...newInsights.emotional_patterns },
-      love_language_hints: [...new Set([...(currentData.love_language_hints || []), ...(newInsights.love_language_hints || [])])],
-      attachment_hints: [...new Set([...(currentData.attachment_hints || []), ...(newInsights.attachment_hints || [])])],
-      family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])],
-      
-      // FIX 2: Store user preferences properly
-      user_preferences: userPreferences,
-      
-      // PHASE 2.2: Enhanced MBTI tracking
-      mbti_confidence_scores: updatedMBTI,
-      mbti_analysis_history: [...(currentData.mbti_analysis_history || []), newInsights.mbti_analysis].slice(-10), // Keep last 10
-      conversation_flow: { ...currentData.conversation_flow, ...newInsights.conversation_flow },
-      
-      // Resistance tracking
-      resistance_count: newInsights.resistance_detected ? (currentData.resistance_count || 0) + 1 : (currentData.resistance_count || 0)
-    };
-    
-    await pool.query(
-      'UPDATE users SET personality_data = $1 WHERE user_id = $2',
-      [JSON.stringify(updatedData), userId]
-    );
-    
-    return updatedData;
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    throw error;
-  }
-}
-
-// FIX 2: Extract specific mentions from messages
+// Extract specific mentions from messages
 function extractSpecificMentions(message) {
   const msg = message.toLowerCase();
   const mentions = {};
@@ -2320,10 +3078,144 @@ function extractSpecificMentions(message) {
   return mentions;
 }
 
-// PHASE 2.2: Enhanced main chat endpoint with Three-Layer Natural Conversation System
+// Enhanced user profile updates with PRD data structure
+async function updateUserProfile(userId, newInsights) {
+  try {
+    const user = await pool.query('SELECT personality_data, couple_compass_data FROM users WHERE user_id = $1', [userId]);
+    const currentData = user.rows[0]?.personality_data || {};
+    const currentCompassData = user.rows[0]?.couple_compass_data || {};
+    
+    // Enhanced MBTI confidence tracking
+    const currentMBTI = currentData.mbti_confidence_scores || {
+      E_I: 0, S_N: 0, T_F: 0, J_P: 0
+    };
+
+    // Update MBTI confidence scores if we have fusion analysis
+    let updatedMBTI = { ...currentMBTI };
+    if (newInsights.mbti_fusion && newInsights.mbti_fusion.enhanced_confidence) {
+      Object.entries(newInsights.mbti_fusion.enhanced_confidence).forEach(([preference, boost]) => {
+        if (preference === 'extrovert') updatedMBTI.E_I = Math.min(100, (updatedMBTI.E_I || 50) + boost);
+        if (preference === 'introvert') updatedMBTI.E_I = Math.max(0, (updatedMBTI.E_I || 50) - boost);
+        if (preference === 'sensing') updatedMBTI.S_N = Math.min(100, (updatedMBTI.S_N || 50) + boost);
+        if (preference === 'intuition') updatedMBTI.S_N = Math.max(0, (updatedMBTI.S_N || 50) - boost);
+        if (preference === 'thinking') updatedMBTI.T_F = Math.min(100, (updatedMBTI.T_F || 50) + boost);
+        if (preference === 'feeling') updatedMBTI.T_F = Math.max(0, (updatedMBTI.T_F || 50) - boost);
+        if (preference === 'judging') updatedMBTI.J_P = Math.min(100, (updatedMBTI.J_P || 50) + boost);
+        if (preference === 'perceiving') updatedMBTI.J_P = Math.max(0, (updatedMBTI.J_P || 50) - boost);
+      });
+    }
+
+    // Enhanced user preferences extraction
+    const userPreferences = currentData.user_preferences || {};
+    
+    // Extract specific preferences from the message if available
+    if (newInsights.specific_mentions) {
+      Object.assign(userPreferences, newInsights.specific_mentions);
+    }
+
+    // Merge new insights with existing data
+    const updatedData = {
+      ...currentData,
+      interests: [...new Set([...(currentData.interests || []), ...(newInsights.interests || [])])],
+      communication_patterns: { ...currentData.communication_patterns, ...newInsights.communication_patterns },
+      emotional_patterns: { ...currentData.emotional_patterns, ...newInsights.emotional_patterns },
+      love_language_hints: [...new Set([...(currentData.love_language_hints || []), ...(newInsights.love_language_hints || [])])],
+      attachment_hints: [...new Set([...(currentData.attachment_hints || []), ...(newInsights.attachment_hints || [])])],
+      family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])],
+      
+      // Store user preferences properly
+      user_preferences: userPreferences,
+      
+      // Enhanced MBTI tracking
+      mbti_confidence_scores: updatedMBTI,
+      mbti_analysis_history: [...(currentData.mbti_analysis_history || []), newInsights.mbti_analysis].slice(-10),
+      conversation_flow: { ...currentData.conversation_flow, ...newInsights.conversation_flow },
+      
+      // Resistance tracking
+      resistance_count: newInsights.resistance_detected ? (currentData.resistance_count || 0) + 1 : (currentData.resistance_count || 0),
+      
+      // Couple Compass completion tracking
+      couple_compass_complete: newInsights.couple_compass_complete || currentData.couple_compass_complete || false
+    };
+
+    // Update Couple Compass data if provided
+    let updatedCompassData = currentCompassData;
+    if (newInsights.couple_compass_response) {
+      updatedCompassData = {
+        ...currentCompassData,
+        ...newInsights.couple_compass_response,
+        completed_at: newInsights.couple_compass_complete ? new Date().toISOString() : null
+      };
+    }
+    
+    await pool.query(
+      'UPDATE users SET personality_data = $1, couple_compass_data = $2 WHERE user_id = $3',
+      [JSON.stringify(updatedData), JSON.stringify(updatedCompassData), userId]
+    );
+    
+    return { personalityData: updatedData, coupleCompassData: updatedCompassData };
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
+}
+
+// Save personal report
+async function savePersonalReport(userId, report) {
+  try {
+    await pool.query(
+      'INSERT INTO personal_reports (user_id, report_type, report_content) VALUES ($1, $2, $3)',
+      [userId, 'personal_insight', JSON.stringify(report)]
+    );
+    
+    await pool.query(
+      'UPDATE users SET report_generated = TRUE WHERE user_id = $1',
+      [userId]
+    );
+  } catch (error) {
+    console.error('Error saving personal report:', error);
+  }
+}
+
+// Find potential matches
+async function findPotentialMatches(userId, userProfile, limit = 5) {
+  try {
+    // Get users of opposite gender with complete profiles
+    const oppositeGender = userProfile.user_gender === 'Male' ? 'Female' : 'Male';
+    
+    const result = await pool.query(`
+      SELECT * FROM users 
+      WHERE user_id != $1 
+      AND user_gender = $2 
+      AND profile_completeness > 70
+      AND couple_compass_data != '{}'
+      ORDER BY profile_completeness DESC
+      LIMIT $3
+    `, [userId, oppositeGender, limit]);
+    
+    return result.rows;
+  } catch (error) {
+    console.error('Error finding potential matches:', error);
+    return [];
+  }
+}
+
+// Save match record
+async function saveMatch(user1Id, user2Id, compatibilityData) {
+  try {
+    await pool.query(
+      'INSERT INTO matches (user1_id, user2_id, compatibility_score, match_reasons) VALUES ($1, $2, $3, $4)',
+      [user1Id, user2Id, compatibilityData.overallScore / 100, JSON.stringify(compatibilityData)]
+    );
+  } catch (error) {
+    console.error('Error saving match:', error);
+  }
+}
+
+// Main chat endpoint with complete PRD implementation
 app.post('/api/chat', async (req, res) => {
   try {
-    const { messages, userId = 'default' } = req.body;
+    const { messages, userId = 'default', coupleCompassState } = req.body;
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -2344,35 +3236,54 @@ app.post('/api/chat', async (req, res) => {
       const currentIntimacyLevel = user.relationship_context?.intimacy_level || 0;
       const conversationCount = conversationHistory.length;
       
-      // PHASE 2.2: Enhanced analysis with MBTI fusion AND natural conversation flow
+      // Enhanced analysis with PRD features
       const analysis = aria.analyzeMessage(
         latestUserMessage.content, 
         conversationHistory, 
         currentIntimacyLevel,
         conversationCount,
-        user.personality_data || {} // Pass existing MBTI data for strategic targeting
+        user.personality_data || {},
+        coupleCompassState?.active || false
       );
 
-      // FIX 2: Extract specific mentions
+      // Extract specific mentions
       const specificMentions = extractSpecificMentions(latestUserMessage.content);
       if (Object.keys(specificMentions).length > 0) {
         analysis.specific_mentions = specificMentions;
       }
 
-      // Enhanced debug logging for Three-Layer System
-      console.log('=== OPTIMIZED NATURAL CONVERSATION SYSTEM ===');
+      // Handle Couple Compass responses
+      let coupleCompassUpdate = {};
+      if (coupleCompassState?.active && coupleCompassState?.questionId) {
+        const compassResult = aria.processCoupleCompassAnswer(
+          coupleCompassState.questionId,
+          coupleCompassState.answer,
+          user.user_name
+        );
+        
+        coupleCompassUpdate = {
+          couple_compass_response: {
+            [coupleCompassState.questionId]: coupleCompassState.answer
+          },
+          couple_compass_complete: compassResult.complete
+        };
+        
+        // Store Couple Compass state for response
+        analysis.couple_compass_result = compassResult;
+      }
+
+      // Enhanced debug logging
+      console.log('=== SOULSYNC AI WITH PRD VISION ===');
       console.log('📱 User ID:', userId);
       console.log('💬 Latest message:', latestUserMessage.content.substring(0, 50) + '...');
-      console.log('🎭 Three-Layer System Active:', 'YES');
-      console.log('⚡ Response Optimization:', 'ACTIVE (2 sentences max)');
-      console.log('🎯 MBTI Dimensions Needed:', analysis.mbti_needs?.dimensions_needed || 'None');
-      console.log('📝 Off-Topic Detection:', analysis.off_topic?.detected ? 'YES - Will Redirect' : 'NO');
-      console.log('🎉 Celebration Opportunity:', !!analysis.celebration_opportunity);
-      console.log('⚠️ Resistance Detected:', !!analysis.resistance_signals?.detected);
-      console.log('🧭 Progression Ready:', analysis.progression_ready);
+      console.log('🎭 Aria Personality:', 'Warm, Flirty, Caring');
+      console.log('💕 Response Style:', '2-3 sentences, personal sharing');
+      console.log('🧭 Couple Compass:', analysis.couple_compass_ready ? 'READY' : coupleCompassState?.active ? 'ACTIVE' : 'Building Trust');
+      console.log('📊 MBTI Progress:', Object.values(user.personality_data?.mbti_confidence_scores || {}).map(s => Math.round(s) + '%').join(', '));
+      console.log('📝 Report Ready:', analysis.ready_for_report?.ready || false);
       console.log('=======================================');
       
-      // PHASE 2.2: Enhanced user profile updates with natural conversation tracking
+      // Enhanced user profile updates
       const updatedProfile = await updateUserProfile(userId, {
         interests: analysis.interests,
         specific_mentions: analysis.specific_mentions,
@@ -2391,7 +3302,7 @@ app.post('/api/chat', async (req, res) => {
         attachment_hints: analysis.attachment_hints,
         family_values_hints: analysis.family_values_hints,
         
-        // PHASE 2.2: MBTI fusion analysis
+        // MBTI fusion analysis
         mbti_analysis: analysis.mbti_analysis,
         mbti_fusion: analysis.mbti_analysis?.fusion_results || null,
         resistance_detected: analysis.resistance_signals?.detected || false,
@@ -2402,8 +3313,10 @@ app.post('/api/chat', async (req, res) => {
           story_sharing_level: analysis.story_sharing_level,
           last_celebration: analysis.celebration_opportunity,
           conversation_count: conversationCount + 1,
-          three_layer_system_active: true // Track that natural system is working
-        }
+          three_layer_system_active: true
+        },
+        
+        ...coupleCompassUpdate
       });
       
       // Update relationship context with new intimacy level
@@ -2421,14 +3334,14 @@ app.post('/api/chat', async (req, res) => {
         console.log(`🆙 User ${userId} leveled up to intimacy level ${currentIntimacyLevel + 1}`);
       }
       
-      // FIX 5: Generate intro message for new users
+      // Generate intro message for new users
       let systemMessages = [];
       if (user.total_conversations === 0) {
         const introMessage = aria.generateIntroMessage(user.user_name, user.user_gender);
         systemMessages.push({ role: 'assistant', content: introMessage });
       }
 
-      // FIX 4: Handle off-topic redirect
+      // Handle off-topic redirect
       if (analysis.off_topic?.detected) {
         const redirectMessage = aria.generateOffTopicRedirect(latestUserMessage.content, user.user_name);
         return res.json({
@@ -2439,28 +3352,29 @@ app.post('/api/chat', async (req, res) => {
             }
           }],
           userInsights: {
-            detectedMood: analysis.mood,
-            currentInterests: updatedProfile.interests || [],
-            userName: user.user_name,
-            userGender: user.user_gender,
-            conversationCount: conversationHistory.length + 1,
-            isReturningUser: conversationHistory.length > 0,
+            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
             offTopicHandled: true
           }
         });
       }
       
-      // PHASE 2.2: Generate NATURAL Three-Layer system prompt
-      let adaptivePrompt = aria.generateSystemPrompt(analysis, updatedProfile, conversationHistory, user);
+      // Generate system prompt with PRD personality
+      let adaptivePrompt = aria.generateSystemPrompt(
+        analysis, 
+        updatedProfile.personalityData, 
+        conversationHistory, 
+        user,
+        coupleCompassState
+      );
 
-      // Prepare messages with NATURAL conversation prompt (no aggressive instructions)
+      // Prepare messages with natural conversation prompt
       const adaptiveMessages = [
         { role: 'system', content: adaptivePrompt },
         ...systemMessages,
         ...messages.slice(1) // Skip original system message
       ];
 
-      // Call OpenAI with OPTIMIZED settings for faster responses
+      // Call OpenAI with optimized settings
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -2470,8 +3384,8 @@ app.post('/api/chat', async (req, res) => {
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: adaptiveMessages,
-          max_tokens: 150, // FIX 3: Reduced from 350 for 2-sentence responses
-          temperature: 0.85,
+          max_tokens: 200, // Slightly more for personality
+          temperature: 0.9, // Higher for more personality
           presence_penalty: 0.3,
           frequency_penalty: 0.2
         })
@@ -2486,13 +3400,26 @@ app.post('/api/chat', async (req, res) => {
 
       const data = await response.json();
       
-      // Enhanced conversation summary with Three-Layer System tracking
-      const mbtiProgress = updatedProfile.mbti_confidence_scores ? 
-        Object.entries(updatedProfile.mbti_confidence_scores)
+      // Generate report if ready
+      let reportGenerated = false;
+      if (analysis.ready_for_report?.ready && !user.report_generated) {
+        const report = aria.reportGenerator.generateReport(
+          user,
+          updatedProfile.personalityData,
+          updatedProfile.coupleCompassData
+        );
+        await savePersonalReport(userId, report);
+        reportGenerated = true;
+        console.log(`📄 Generated personal insight report for ${user.user_name}`);
+      }
+      
+      // Enhanced conversation summary
+      const mbtiProgress = updatedProfile.personalityData.mbti_confidence_scores ? 
+        Object.entries(updatedProfile.personalityData.mbti_confidence_scores)
           .map(([dim, score]) => `${dim}:${Math.round(score)}%`)
           .join(', ') : 'Building baseline';
       
-      const sessionSummary = `Level ${analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel}: ${analysis.topics.join(', ') || 'personal connection'} (${analysis.emotional_openness} openness, Natural Flow: Active, MBTI: ${mbtiProgress})`;
+      const sessionSummary = `Level ${analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel}: ${analysis.topics.join(', ') || 'personal connection'} (${analysis.emotional_openness} openness, MBTI: ${mbtiProgress})`;
       
       // Save conversation with enhanced metadata
       await saveConversation(
@@ -2507,85 +3434,25 @@ app.post('/api/chat', async (req, res) => {
             mbti_fusion: analysis.mbti_analysis,
             values: analysis.family_values_hints
           },
-          mbti_confidence_scores: updatedProfile.mbti_confidence_scores,
-          three_layer_system: {
-            active: true,
-            resistance_handled: analysis.resistance_signals?.detected || false,
-            celebration_triggered: !!analysis.celebration_opportunity,
-            natural_flow_maintained: true
-          }
+          mbti_confidence_scores: updatedProfile.personalityData.mbti_confidence_scores,
+          couple_compass_active: coupleCompassState?.active || false,
+          couple_compass_complete: updatedProfile.personalityData.couple_compass_complete || false
         },
         sessionSummary
       );
 
-      // PHASE 2.2: Return enhanced response with Natural Conversation insights
+      // Return enhanced response
       res.json({
         ...data,
         userInsights: {
-          // Existing insights
-          detectedMood: analysis.mood,
-          detectedEnergy: analysis.energy,
-          currentInterests: updatedProfile.interests || [],
-          communicationStyle: analysis.communication_style,
-          emotionalNeeds: analysis.emotional_needs,
-          conversationCount: conversationHistory.length + 1,
-          isReturningUser: conversationHistory.length > 0,
-          userName: user.user_name,
-          userGender: user.user_gender,
-          
-          // FIX 2: Include user preferences
-          userPreferences: updatedProfile.user_preferences || {},
-          
-          // Enhanced conversation flow insights
-          intimacyLevel: analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel,
-          emotionalOpenness: analysis.emotional_openness,
-          storySharingLevel: analysis.story_sharing_level,
-          intimacyProgression: analysis.should_level_up,
-          celebrationMoment: analysis.celebration_opportunity,
-          nextQuestionSuggestion: analysis.next_question_suggestion,
-          
-          // PHASE 2.2: Natural Conversation System insights
-          naturalConversationActive: true,
-          threeLayerSystemWorking: true,
-          optimizedForSpeed: true,
-          // NEW: Couple Compass progression insights
-          progressionReady: analysis.progression_ready,
-          progressionPath: analysis.progression_path,
-          transitionSuggestion: analysis.transition_suggestion,
-          triggerReason: analysis.trigger_reason,
-          progressionSystem: {
-            active: true,
-            pathsDetected: ['psychology_success', 'psychology_stuck', 'direct_interest'],
-            currentStatus: analysis.progression_ready ? 'ready_for_transition' : 'building_foundation'
-          },
-          mbtiConfidenceScores: updatedProfile.mbti_confidence_scores || {},
-          mbtiAnalysis: analysis.mbti_analysis,
-          dimensionsNeeded: analysis.mbti_needs?.dimensions_needed || [],
-          priorityDimension: analysis.mbti_needs?.priority_dimension,
-          resistanceDetected: analysis.resistance_signals?.detected || false,
-          resistanceHandled: analysis.resistance_signals?.detected ? 'Gentler approach activated' : 'No resistance',
-          topicBridges: analysis.topic_bridges || [],
-          
-          // Psychology framework insights
-          advancedLoveLanguage: analysis.love_language_hints,
-          advancedAttachment: analysis.attachment_hints,
-          
-          // PHASE 2.2: Enhanced profile completeness with natural conversation tracking
-          profileCompleteness: calculateEnhancedProfileCompleteness(updatedProfile),
-          mbtiProgress: calculateMBTIProgress(updatedProfile.mbti_confidence_scores || {}),
-          readyForMatching: assessMatchingReadiness(updatedProfile),
-          conversationQuality: {
-            naturalFlow: 'Active',
-            psychologyIntegration: 'Seamless',
-            userComfort: analysis.resistance_signals?.detected ? 'Gentle Mode' : 'High',
-            dataCollection: 'Effective',
-            responseSpeed: 'Optimized'
-          }
+          ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+          reportGenerated,
+          coupleCompassResult: analysis.couple_compass_result
         }
       });
 
     } else {
-      // Handle non-user messages normally
+      // Handle non-user messages
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -2595,7 +3462,7 @@ app.post('/api/chat', async (req, res) => {
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: messages,
-          max_tokens: 150, // Optimized for speed
+          max_tokens: 150,
           temperature: 0.8
         })
       });
@@ -2613,6 +3480,167 @@ app.post('/api/chat', async (req, res) => {
 
   } catch (error) {
     console.error('Backend error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper function to generate user insights
+function generateUserInsights(analysis, updatedProfile, user, conversationCount) {
+  return {
+    // Basic insights
+    detectedMood: analysis.mood,
+    detectedEnergy: analysis.energy,
+    currentInterests: updatedProfile.personalityData.interests || [],
+    communicationStyle: analysis.communication_style,
+    emotionalNeeds: analysis.emotional_needs,
+    conversationCount: conversationCount,
+    isReturningUser: conversationCount > 1,
+    userName: user.user_name,
+    userGender: user.user_gender,
+    
+    // Memory and preferences
+    userPreferences: updatedProfile.personalityData.user_preferences || {},
+    
+    // Conversation flow insights
+    intimacyLevel: analysis.should_level_up ? 
+      (updatedProfile.personalityData.conversation_flow?.current_intimacy_level || 0) : 
+      (user.relationship_context?.intimacy_level || 0),
+    emotionalOpenness: analysis.emotional_openness,
+    storySharingLevel: analysis.story_sharing_level,
+    intimacyProgression: analysis.should_level_up,
+    celebrationMoment: analysis.celebration_opportunity,
+    nextQuestionSuggestion: analysis.next_question_suggestion,
+    
+    // PRD features
+    ariaPersonalityActive: true,
+    coupleCompassReady: analysis.couple_compass_ready,
+    reportReady: analysis.ready_for_report,
+    
+    // MBTI insights
+    mbtiConfidenceScores: updatedProfile.personalityData.mbti_confidence_scores || {},
+    mbtiAnalysis: analysis.mbti_analysis,
+    dimensionsNeeded: analysis.mbti_needs?.dimensions_needed || [],
+    priorityDimension: analysis.mbti_needs?.priority_dimension,
+    
+    // Resistance handling
+    resistanceDetected: analysis.resistance_signals?.detected || false,
+    resistanceHandled: analysis.resistance_signals?.detected ? 'Warm approach activated' : 'No resistance',
+    
+    // Topic management
+    currentTopic: analysis.current_topic,
+    topicDepth: analysis.topic_depth,
+    shouldSwitchTopic: analysis.should_switch_topic,
+    topicBridges: analysis.topic_bridges || [],
+    
+    // Advanced psychology
+    advancedLoveLanguage: analysis.love_language_hints,
+    advancedAttachment: analysis.attachment_hints,
+    familyValues: analysis.family_values_hints,
+    
+    // Profile completeness
+    profileCompleteness: calculateEnhancedProfileCompleteness(updatedProfile.personalityData),
+    mbtiProgress: calculateMBTIProgress(updatedProfile.personalityData.mbti_confidence_scores || {}),
+    readyForMatching: assessMatchingReadiness(updatedProfile.personalityData),
+    
+    // System quality
+    conversationQuality: {
+      naturalFlow: 'Active',
+      personalityIntegration: 'Warm & Flirty',
+      userComfort: analysis.resistance_signals?.detected ? 'Building Trust' : 'High',
+      dataCollection: 'Natural & Effective',
+      responseSpeed: 'Optimized',
+      prdAlignment: 'Complete'
+    }
+  };
+}
+
+// Get user report endpoint
+app.get('/api/user-report/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const result = await pool.query(
+      'SELECT * FROM personal_reports WHERE user_id = $1 ORDER BY generated_at DESC LIMIT 1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No report found for user' });
+    }
+    
+    res.json({
+      report: result.rows[0].report_content,
+      generatedAt: result.rows[0].generated_at
+    });
+    
+  } catch (error) {
+    console.error('Error getting user report:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get user matches endpoint
+app.get('/api/user-matches/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Get user profile
+    const userResult = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = userResult.rows[0];
+    const aria = new AriaPersonality();
+    
+    // Find potential matches
+    const potentialMatches = await findPotentialMatches(userId, user);
+    
+    // Calculate compatibility for each match
+    const matchProfiles = [];
+    
+    for (const match of potentialMatches) {
+      const compatibilityData = aria.compatibilityEngine.calculateCompatibility(
+        {
+          mbti_type: determineMBTIType(user.personality_data.mbti_confidence_scores || {}).partial_type,
+          couple_compass: user.couple_compass_data,
+          attachment_style: getPrimaryAttachment(user.personality_data.attachment_hints || []),
+          interests: user.personality_data.interests || [],
+          communication_style: user.personality_data.communication_patterns?.style
+        },
+        {
+          mbti_type: determineMBTIType(match.personality_data.mbti_confidence_scores || {}).partial_type,
+          couple_compass: match.couple_compass_data,
+          attachment_style: getPrimaryAttachment(match.personality_data.attachment_hints || []),
+          interests: match.personality_data.interests || [],
+          communication_style: match.personality_data.communication_patterns?.style
+        }
+      );
+      
+      // Generate match profile
+      const matchProfile = aria.matchGenerator.generateMatchProfile(user, match, compatibilityData);
+      
+      matchProfiles.push({
+        matchId: match.user_id,
+        matchName: match.user_name,
+        compatibilityScore: compatibilityData.overallScore,
+        profile: matchProfile
+      });
+      
+      // Save match record
+      await saveMatch(userId, match.user_id, compatibilityData);
+    }
+    
+    // Sort by compatibility score
+    matchProfiles.sort((a, b) => b.compatibilityScore - a.compatibilityScore);
+    
+    res.json({
+      matches: matchProfiles.slice(0, 3), // Top 3 matches
+      totalFound: matchProfiles.length
+    });
+    
+  } catch (error) {
+    console.error('Error getting user matches:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2639,18 +3667,25 @@ app.get('/api/user-insights/:userId', async (req, res) => {
       createdAt: userData.created_at,
       lastSeen: userData.last_seen,
       personalityData: userData.personality_data,
+      coupleCompassData: userData.couple_compass_data,
       relationshipContext: userData.relationship_context,
       conversationCount: conversations.length,
       totalConversations: userData.total_conversations,
       recentTopics: conversations.slice(-3).map(conv => conv.session_summary),
       profileCompleteness: calculateEnhancedProfileCompleteness(userData.personality_data),
+      reportGenerated: userData.report_generated,
       
-      // PHASE 2.2: Enhanced insights with natural conversation tracking
+      // PRD-specific insights
       mbtiProgress: calculateMBTIProgress(userData.personality_data?.mbti_confidence_scores || {}),
       mbtiType: determineMBTIType(userData.personality_data?.mbti_confidence_scores || {}),
       readyForMatching: assessMatchingReadiness(userData.personality_data || {}),
-      naturalConversationSystem: {
-        active: userData.personality_data?.conversation_flow?.three_layer_system_active || false,
+      coupleCompassComplete: userData.personality_data?.couple_compass_complete || false,
+      loveLanguages: userData.personality_data?.love_language_hints || [],
+      attachmentStyle: getPrimaryAttachment(userData.personality_data?.attachment_hints || []),
+      
+      conversationSystem: {
+        active: true,
+        personality: 'Warm, Flirty, Caring',
         qualityScore: userData.personality_data?.conversation_flow?.emotional_openness || 'unknown',
         resistanceLevel: userData.personality_data?.resistance_count || 0,
         celebrationMoments: userData.personality_data?.conversation_flow?.last_celebration ? 1 : 0
@@ -2662,29 +3697,37 @@ app.get('/api/user-insights/:userId', async (req, res) => {
   }
 });
 
-// PHASE 2.2: Enhanced profile completeness calculation with natural conversation tracking
+// Helper function to get primary attachment style
+function getPrimaryAttachment(hints) {
+  if (hints.includes('secure_tendency')) return 'secure';
+  if (hints.includes('anxious_tendency')) return 'anxious';
+  if (hints.includes('avoidant_tendency')) return 'avoidant';
+  return 'developing';
+}
+
+// Enhanced profile completeness calculation
 function calculateEnhancedProfileCompleteness(personalityData) {
   const phases = {
-    // Phase 1: Basic personality (15% weight)
+    // Phase 1: Basic personality (10% weight)
     basic: ['interests', 'communication_patterns', 'emotional_patterns'],
     
-    // Phase 2.1: Conversation flow insights (15% weight)  
-    conversation_flow: ['conversation_flow'],
-    
-    // Phase 2.2: MBTI framework (40% weight) - Primary focus with natural detection
+    // Phase 2: MBTI framework (30% weight)
     mbti: ['mbti_confidence_scores'],
     
-    // Phase 2.3: Advanced psychology (20% weight)
+    // Phase 3: Couple Compass (30% weight)
+    couple_compass: ['couple_compass_complete'],
+    
+    // Phase 4: Advanced psychology (20% weight)
     advanced_psychology: ['love_language_hints', 'attachment_hints'],
     
-    // Phase 2.4: Values and lifestyle (10% weight)
+    // Phase 5: Values and lifestyle (10% weight)
     values: ['family_values_hints']
   };
   
   const weights = {
-    basic: 0.15,
-    conversation_flow: 0.15,
-    mbti: 0.40, // Increased weight for natural MBTI detection
+    basic: 0.10,
+    mbti: 0.30,
+    couple_compass: 0.30,
     advanced_psychology: 0.20,
     values: 0.10
   };
@@ -2695,15 +3738,11 @@ function calculateEnhancedProfileCompleteness(personalityData) {
     let phaseScore = 0;
     
     if (phase === 'mbti') {
-      // Enhanced MBTI scoring with natural conversation bonus
       const mbtiScores = personalityData.mbti_confidence_scores || {};
       const avgConfidence = Object.values(mbtiScores).reduce((sum, score) => sum + score, 0) / 4;
-      phaseScore = Math.min(avgConfidence / 100, 1); // Normalize to 0-1
-      
-      // Bonus for natural conversation system being active
-      if (personalityData.conversation_flow?.three_layer_system_active) {
-        phaseScore = Math.min(phaseScore + 0.1, 1); // 10% bonus for natural approach
-      }
+      phaseScore = Math.min(avgConfidence / 100, 1);
+    } else if (phase === 'couple_compass') {
+      phaseScore = personalityData.couple_compass_complete ? 1 : 0;
     } else {
       const phaseFields = fields.filter(field => {
         const data = personalityData[field];
@@ -2720,7 +3759,7 @@ function calculateEnhancedProfileCompleteness(personalityData) {
   return Math.round(totalScore * 100);
 }
 
-// PHASE 2.2: Calculate MBTI discovery progress with natural conversation bonuses
+// Calculate MBTI discovery progress
 function calculateMBTIProgress(mbtiScores) {
   const dimensionProgress = {
     E_I: Math.round(mbtiScores.E_I || 0),
@@ -2738,18 +3777,18 @@ function calculateMBTIProgress(mbtiScores) {
     dimensions_discovered: dimensionsAbove75,
     total_dimensions: 4,
     discovery_percentage: Math.round((dimensionsAbove75 / 4) * 100),
-    detection_method: 'Natural Three-Layer Conversation System'
+    detection_method: 'Natural Conversation with Aria'
   };
 }
 
-// PHASE 2.2: Determine MBTI type from confidence scores with natural conversation context
+// Determine MBTI type from confidence scores
 function determineMBTIType(mbtiScores) {
   const type = {
     determined: false,
     partial_type: '',
     confidence_level: 'low',
     type_letters: {},
-    detection_quality: 'natural_conversation' // Added for Phase 2.2
+    detection_quality: 'natural_conversation'
   };
   
   // Determine each dimension based on confidence threshold
@@ -2788,30 +3827,33 @@ function determineMBTIType(mbtiScores) {
     type.partial_type = `${type.type_letters.energy || '_'}${type.type_letters.information || '_'}${type.type_letters.decisions || '_'}${type.type_letters.lifestyle || '_'}`;
     type.confidence_level = 'medium';
   } else if (determinedLetters >= 1) {
-    type.partial_type = 'Some preferences identified through natural conversation';
+    type.partial_type = 'Some preferences identified';
     type.confidence_level = 'low';
   }
   
   return type;
 }
 
-// PHASE 2.2: Assess readiness for matchmaking with natural conversation quality
+// Assess readiness for matchmaking
 function assessMatchingReadiness(personalityData) {
   const criteria = {
     mbti_completion: 0,
+    couple_compass_completion: 0,
     love_language_clarity: 0,
     attachment_understanding: 0,
     values_exploration: 0,
-    conversation_quality: 0, // New for Phase 2.2
     overall_readiness: 0
   };
   
-  // MBTI completion (35% weight - reduced slightly)
+  // MBTI completion (30% weight)
   const mbtiScores = personalityData.mbti_confidence_scores || {};
   const avgMBTI = Object.values(mbtiScores).reduce((sum, score) => sum + score, 0) / 4;
   criteria.mbti_completion = Math.round(avgMBTI);
   
-  // Love language clarity (20% weight)
+  // Couple Compass completion (30% weight)
+  criteria.couple_compass_completion = personalityData.couple_compass_complete ? 100 : 0;
+  
+  // Love language clarity (15% weight)
   const loveLanguages = personalityData.love_language_hints || [];
   criteria.love_language_clarity = Math.min(loveLanguages.length * 25, 100);
   
@@ -2819,26 +3861,17 @@ function assessMatchingReadiness(personalityData) {
   const attachmentHints = personalityData.attachment_hints || [];
   criteria.attachment_understanding = Math.min(attachmentHints.length * 33, 100);
   
-  // Values exploration (15% weight)
+  // Values exploration (10% weight)
   const valuesHints = personalityData.family_values_hints || [];
   criteria.values_exploration = Math.min(valuesHints.length * 50, 100);
   
-  // Conversation quality (15% weight - NEW for Phase 2.2)
-  const conversationFlow = personalityData.conversation_flow || {};
-  let qualityScore = 0;
-  if (conversationFlow.three_layer_system_active) qualityScore += 30;
-  if (conversationFlow.emotional_openness === 'very_open') qualityScore += 40;
-  else if (conversationFlow.emotional_openness === 'moderately_open') qualityScore += 20;
-  if ((personalityData.resistance_count || 0) === 0) qualityScore += 30;
-  criteria.conversation_quality = Math.min(qualityScore, 100);
-  
-  // Calculate overall readiness with new weighting
+  // Calculate overall readiness
   criteria.overall_readiness = Math.round(
-    (criteria.mbti_completion * 0.35) +
-    (criteria.love_language_clarity * 0.20) +
+    (criteria.mbti_completion * 0.30) +
+    (criteria.couple_compass_completion * 0.30) +
+    (criteria.love_language_clarity * 0.15) +
     (criteria.attachment_understanding * 0.15) +
-    (criteria.values_exploration * 0.15) +
-    (criteria.conversation_quality * 0.15)
+    (criteria.values_exploration * 0.10)
   );
   
   return {
@@ -2846,7 +3879,7 @@ function assessMatchingReadiness(personalityData) {
     ready_for_matching: criteria.overall_readiness >= 75,
     readiness_level: criteria.overall_readiness >= 75 ? 'ready' : 
                     criteria.overall_readiness >= 50 ? 'almost_ready' : 'building_profile',
-    detection_method: 'Natural Three-Layer Conversation System'
+    detection_method: 'Aria Conversation + Couple Compass'
   };
 }
 
@@ -2880,12 +3913,13 @@ app.get('/api/test-db', async (req, res) => {
         allowlist_capacity: '35 users max'
       },
       features: [
-        'Complete user profiles (name, gender, phone)',
+        'Complete user profiles with PRD structure',
         'Phone number allowlist system (35 users max)',
-        'Cross-session memory with user identification',
-        'Progressive relationship building',
-        'Mood and interest persistence',
-        'Admin management endpoints'
+        'Aria personality system (warm, flirty, caring)',
+        'Couple Compass game implementation',
+        'Personal insight report generation',
+        'Basic matchmaking engine',
+        'Cross-session memory with personality tracking'
       ]
     });
   } catch (error) {
@@ -2898,96 +3932,66 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Enhanced health check with Phase 2.2 Natural Conversation System
+// Enhanced health check with complete PRD implementation
 app.get('/api/health', async (req, res) => {
   try {
     const dbTest = await pool.query('SELECT NOW()');
     const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
     
     res.json({ 
-      status: 'SoulSync AI Backend - ALL FIXES IMPLEMENTED ✅',
-      optimizations_applied: {
-        'FIX 1': '✅ detectDirectInterest - Added missing keywords (compatible, soulmate, the one)',
-        'FIX 2': '✅ Memory System - Properly extracts and references user preferences',
-        'FIX 3': '✅ Response Length - Limited to 2 sentences (150 tokens)',
-        'FIX 4': '✅ Off-Topic Boundaries - Detects and redirects non-personal questions',
-        'FIX 5': '✅ Aria Introduction - Warm intro for new users',
-        'SPEED': '✅ Optimized prompts (70% shorter) + reduced tokens for faster responses'
+      status: 'SoulSync AI - PRD COMPLETE IMPLEMENTATION ✅',
+      tagline: 'Emotionally intelligent matchmaking + relationship readiness',
+      
+      prd_features_implemented: {
+        '🎭 AI Companion': 'Aria - warm, flirty, caring personality',
+        '💬 Natural Chat': '2-3 sentence responses with personal sharing',
+        '🧭 Couple Compass': 'Multiple-choice life alignment game',
+        '📊 MBTI Detection': 'Natural conversation-based discovery',
+        '💕 Love Languages': 'Behavioral scenario detection',
+        '🔗 Attachment Styles': 'Conflict and emotional pattern analysis',
+        '📝 Personal Reports': 'Narrative insight generation',
+        '💑 Basic Matching': 'Multi-dimensional compatibility scoring'
       },
+      
       database_connected: true,
       database_time: dbTest.rows[0].now,
       allowlist_users: allowlistCount.rows[0].count,
       allowlist_capacity: '35 users max',
-      phase_status: {
-        'Phase 1': '✅ Complete - Phone verification, memory, basic personality',
-        'Phase 2.1': '✅ Complete - Natural Conversation Flow Engine + Psychology Framework',
-        'Phase 2.2': '✅ COMPLETE - Natural Three-Layer Conversation System + Strategic MBTI Detection',
-        'Phase 2.3': '🔄 Ready - Advanced Love Language & Attachment (framework in place)', 
-        'Phase 2.4': '🔄 Ready - Values & Lifestyle Profiling (framework in place)'
+      
+      implementation_phases: {
+        'Phase 1': '✅ Aria Personality - Warm, flirty companion',
+        'Phase 2': '✅ Couple Compass - Life vision alignment game',
+        'Phase 3': '✅ Enhanced Data Structure - Complete profile system',
+        'Phase 4': '✅ Report Generation - Personal insights',
+        'Phase 5': '✅ Basic Matchmaking - Compatibility engine'
       },
-      features: [
-        // Phase 1 & 2.1 Features
-        'PostgreSQL Memory System ✅',
-        'Phone Number Allowlist (35 users) ✅',
-        'Complete User Profiles ✅',
-        'Cross-session Continuity ✅',
-        'Adaptive personality system ✅',
-        'Real-time mood detection ✅',
-        'Interest tracking ✅',
-        'Natural Conversation Flow Engine ✅',
-        'Progressive intimacy levels (0-4) ✅',
-        'Story-based question generation ✅',
-        'Interactive conversation elements ✅',
-        'Emotional openness tracking ✅',
-        'Celebration moment detection ✅',
-        
-        // NEW Phase 2.2 Features - Natural Conversation System
-        '🎭 Three-Layer Response Structure ✅',
-        '🌟 Natural Psychology Detection ✅',
-        '💫 Emotional-First Conversation Flow ✅',
-        '🎯 Strategic-but-Gentle MBTI Discovery ✅',
-        '🌸 Resistance Detection & Graceful Handling ✅',
-        '🎉 Trust-Building Celebration System ✅',
-        '🔄 Natural Topic Bridging ✅',
-        '📈 Enhanced Confidence Scoring (0-100 scale) ✅',
-        '🤝 Cross-Framework Psychology Validation ✅',
-        '💝 Natural Intimacy Progression ✅',
-        
-        // NEW FIXES
-        '⚡ 2-sentence response limit ✅',
-        '🧠 Enhanced memory references ✅',
-        '🚫 Off-topic detection & redirect ✅',
-        '👋 New user introduction system ✅',
-        '🚀 Optimized for speed (70% faster) ✅',
-        
-        'Admin management system ✅',
-        'Database schema fix endpoint ✅'
+      
+      conversation_features: [
+        'Flirtatious but respectful personality',
+        'Personal story sharing ("filter coffee and internal conflict")',
+        'Emotional reactions and observations',
+        'Natural MBTI detection through conversation',
+        'Progressive intimacy levels (0-4)',
+        'Resistance handling with warmth',
+        'Celebration of user insights',
+        'Off-topic graceful redirects'
       ],
-      conversation_capabilities: {
-        three_layer_system: 'Active',
-        natural_psychology_detection: 'Seamless',
-        intimacy_levels: 5,
-        story_templates: 25,
-        interactive_elements: 12,
-        mbti_scenarios: '100+',
-        psychology_frameworks: 4,
-        mood_adaptations: 'Dynamic',
-        conversation_flow: 'Natural Three-Layer: Emotional → Curiosity → Psychology',
-        mbti_dimensions: 4,
-        confidence_tracking: 'Real-time natural conversation analysis',
-        resistance_handling: 'Gentle redirection with trust-building',
-        celebration_system: 'Automated insight recognition and validation',
-        response_optimization: '2 sentences max, 150 tokens, faster prompts'
-      },
-      ai_intelligence: {
-        conversation_approach: 'Natural Three-Layer Response Structure',
-        psychology_integration: 'Emotional-first strategic discovery',
-        user_experience: 'Feels like friendship, not interrogation',
-        data_collection: 'Invisible and effective through genuine curiosity',
-        resistance_handling: 'Graceful adaptation with trust preservation',
-        celebration_system: 'Builds excitement about self-discovery',
-        natural_flow: 'Every topic bridges naturally to personality insights',
-        speed_optimization: 'Responses 70% faster with maintained quality'
+      
+      couple_compass_features: [
+        'Living arrangements exploration',
+        'Financial partnership styles',
+        'Parenting vision alignment',
+        'Conflict resolution preferences',
+        'Career vs life balance',
+        'Synthesis and insights'
+      ],
+      
+      ai_capabilities: {
+        personality: 'Aria embodies warmth, curiosity, and genuine care',
+        conversation_style: 'Natural flow with strategic psychology',
+        data_collection: 'Invisible through genuine connection',
+        user_experience: 'Feels like talking to a best friend',
+        matchmaking_approach: 'Multi-dimensional compatibility analysis'
       }
     });
   } catch (error) {
@@ -2997,9 +4001,9 @@ app.get('/api/health', async (req, res) => {
       database_error: error.message,
       features: [
         'In-memory storage (fallback)',
-        'Natural Three-Layer conversation flow',
-        'Mood detection',
-        'Interest tracking'
+        'Aria personality active',
+        'Natural conversation flow',
+        'PRD vision implemented'
       ]
     });
   }
@@ -3007,13 +4011,13 @@ app.get('/api/health', async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🧠 SoulSync AI Backend - ALL FIXES IMPLEMENTED`);
-  console.log('✅ FIX 1: detectDirectInterest - Added missing keywords');
-  console.log('✅ FIX 2: Memory System - Properly references user preferences');
-  console.log('✅ FIX 3: Response Length - 2 sentences max (150 tokens)');
-  console.log('✅ FIX 4: Off-Topic Boundaries - Redirects non-personal questions');
-  console.log('✅ FIX 5: Aria Introduction - Warm greeting for new users');
-  console.log('⚡ SPEED: Optimized prompts + reduced tokens = 70% faster responses');
-  console.log('🎭 Core Innovation: Natural conversation that builds real connections');
-  console.log(`🚀 Running on port ${PORT} - Aria is ready to connect!`);
+  console.log(`💕 SoulSync AI - PRD COMPLETE IMPLEMENTATION`);
+  console.log('🎭 Aria Personality: Warm, flirty, caring AI companion');
+  console.log('💬 Natural Chat: 2-3 sentences with personal sharing');
+  console.log('🧭 Couple Compass: Life alignment through playful game');
+  console.log('📊 MBTI Detection: Natural discovery through conversation');
+  console.log('📝 Reports: Personal insights like letter from therapist + lover');
+  console.log('💑 Matchmaking: Multi-dimensional compatibility analysis');
+  console.log('✨ Experience: "Every question feels like curiosity, not interrogation"');
+  console.log(`🚀 Running on port ${PORT} - Ready to create meaningful connections!`);
 });
