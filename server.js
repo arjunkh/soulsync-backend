@@ -3259,6 +3259,7 @@ app.post('/api/chat', async (req, res) => {
     const conversationHistory = await getUserConversationHistory(userId);
     
     const aria = new AriaPersonality();
+    const coupleCompass = aria.coupleCompass; // Access the game instance
     
     // Get the latest user message
     const latestUserMessage = messages[messages.length - 1];
@@ -3282,6 +3283,29 @@ app.post('/api/chat', async (req, res) => {
       const specificMentions = extractSpecificMentions(latestUserMessage.content);
       if (Object.keys(specificMentions).length > 0) {
         analysis.specific_mentions = specificMentions;
+      }
+
+      // Detect Couple Compass acceptance
+      const userSaidYesToCompass = false; // Initialize as false
+      if (analysis.couple_compass_ready) {
+        const userMessage = latestUserMessage.content.toLowerCase();
+        const acceptanceWords = ['yes', 'sure', 'ok', 'okay', 'let\'s play', 'let\'s go', 'yeah', 'yep', 'absolutely', 'definitely'];
+        if (acceptanceWords.some(word => userMessage.includes(word))) {
+          userSaidYesToCompass = true;
+        }
+      }
+
+      // Initialize Couple Compass game state
+      let gameState = null;
+      if (userSaidYesToCompass && !coupleCompassState?.active) {
+        coupleCompass.reset(); // Start fresh
+        const firstQuestion = coupleCompass.getCurrentQuestion();
+        gameState = {
+          active: true,
+          questionIndex: 0,
+          currentQuestion: firstQuestion,
+          questionId: firstQuestion.id
+        };
       }
 
       // Handle Couple Compass responses
@@ -3392,11 +3416,11 @@ app.post('/api/chat', async (req, res) => {
       
       // Generate system prompt with PRD personality
       let adaptivePrompt = aria.generateSystemPrompt(
-        analysis, 
-        updatedProfile.personalityData, 
-        conversationHistory, 
+        analysis,
+        updatedProfile.personalityData,
+        conversationHistory,
         user,
-        coupleCompassState
+        gameState || coupleCompassState // Use new gameState if available
       );
 
       // Prepare messages with natural conversation prompt
