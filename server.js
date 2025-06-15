@@ -3287,7 +3287,11 @@ app.post('/api/chat', async (req, res) => {
 
       // Detect Couple Compass acceptance
       let userSaidYesToCompass = false; // Initialize as false
-      if (analysis.couple_compass_ready) {
+      // Check if user is responding to Couple Compass invitation
+      const ariaLastMessage = messages[messages.length - 2]?.content || '';
+      const ariaOfferedCompass = ariaLastMessage.toLowerCase().includes('couple compass');
+      
+      if (ariaOfferedCompass) {
         const userMessage = latestUserMessage.content.toLowerCase();
         const acceptanceWords = ['yes', 'sure', 'ok', 'okay', 'let\'s play', 'let\'s go', 'yeah', 'yep', 'absolutely', 'definitely'];
         if (acceptanceWords.some(word => userMessage.includes(word))) {
