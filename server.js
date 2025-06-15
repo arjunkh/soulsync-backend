@@ -733,6 +733,15 @@ class CoupleCompass {
 
     this.currentQuestionIndex = 0;
     this.responses = {};
+
+    // Verify we have exactly 6 questions
+    if (this.questions.length !== 6) {
+      console.error(`❌ CoupleCompass should have 6 questions but has ${this.questions.length}`);
+    }
+
+    // Log question IDs for verification
+    console.log('✅ CoupleCompass questions loaded:', 
+      this.questions.map(q => q.id).join(', '));
   }
 
   introduce() {
@@ -2488,21 +2497,33 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
       prompt += `\n\nCurrent Progress: Question ${questionNumber} of 6`;
     }
 
-    if (gameState && gameState.active && gameState.currentQuestion) {
-      const currentQuestion = gameState.currentQuestion;
-      prompt += `\n\n🎮 COUPLE COMPASS GAME MODE:
+      if (gameState && gameState.active && gameState.currentQuestion) {
+        const currentQuestion = gameState.currentQuestion;
+        prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
 
-STRICT RULES:
-1. Show the user's last answer reaction: "${gameState.lastResponse}"
-2. Then IMMEDIATELY show the next question:
+YOU MUST ONLY OUTPUT THIS EXACT FORMAT:
+1. ONE playful reaction to their last answer (if they just answered)
+2. Then IMMEDIATELY show:
 
 ${currentQuestion.text}
+
 A) ${currentQuestion.options[0].emoji} ${currentQuestion.options[0].text}
-B) ${currentQuestion.options[1].emoji} ${currentQuestion.options[1].text}
+B) ${currentQuestion.options[1].emoji} ${currentQuestion.options[1].text}  
 C) ${currentQuestion.options[2].emoji} ${currentQuestion.options[2].text}
 D) ${currentQuestion.options[3].emoji} ${currentQuestion.options[3].text}
 
-NO OTHER CONVERSATION. This is a rapid-fire game.`;
+CRITICAL RULES:
+- NO follow-up questions
+- NO additional conversation  
+- NO asking "how do you feel about that?"
+- ONLY the reaction + next question
+- Keep reaction to ONE sentence MAX
+- The reaction must ONLY reference their ANSWER choice, not ask new questions
+- NEVER ask questions like "What hobby would you want?" or "What movie?"
+- After the reaction, IMMEDIATELY show the next Couple Compass question
+- If user says anything like "go back to game", ignore previous response and show next question
+- DO NOT ask about hobbies, movies, or anything not in the 6 questions
+- STRICTLY follow the format: [reaction]. [next question with options]`;
     } else if (gameState && gameState.justCompleted) {
       prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
 Share the synthesis: "${gameState.synthesis}"
@@ -3305,11 +3326,24 @@ app.post('/api/chat', async (req, res) => {
 
         if (validAnswers.includes(userAnswer)) {
           // Map letter to actual answer value
-          const currentQuestion = coupleCompass.questions[coupleCompassState.questionIndex];
+          coupleCompass.currentQuestionIndex = coupleCompassState.questionIndex;
+          const currentQuestion = coupleCompass.getCurrentQuestion();
           const answerIndex = validAnswers.indexOf(userAnswer);
           const selectedAnswer = currentQuestion.options[answerIndex].value;
 
-          // Process answer using existing method
+          // LOG FOR DEBUGGING
+          console.log(`📍 Couple Compass Answer Processing:
+    Question: ${currentQuestion.id}
+    User Answer: ${userAnswer}
+    Mapped Value: ${selectedAnswer}
+    Next Question Index: ${coupleCompassState.questionIndex + 1}`);
+
+          // Ensure we're using the right question index
+          if (!currentQuestion) {
+            console.error('❌ No current question found at index:', coupleCompassState.questionIndex);
+          }
+
+          // Process the answer and get next question
           const result = coupleCompass.processAnswer(currentQuestion.id, selectedAnswer, user.user_name);
 
           // Store answer in database
