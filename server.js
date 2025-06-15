@@ -3312,6 +3312,32 @@ app.post('/api/chat', async (req, res) => {
         };
       }
 
+      // Check if user is answering a Couple Compass question
+      if (!gameState && coupleCompassState?.active) {
+        const userAnswer = latestUserMessage.content.trim().toUpperCase();
+        const validAnswers = ['A', 'B', 'C', 'D'];
+
+        if (validAnswers.includes(userAnswer)) {
+          // Map letter to actual answer value
+          const currentQuestion = coupleCompass.questions[coupleCompassState.questionIndex];
+          const answerIndex = validAnswers.indexOf(userAnswer);
+          const selectedAnswer = currentQuestion.options[answerIndex].value;
+
+          // Process the answer and get next question
+          const result = coupleCompass.processAnswer(currentQuestion.id, selectedAnswer, user.user_name);
+
+          if (!result.complete) {
+            // Create state for next question
+            gameState = {
+              active: true,
+              questionIndex: coupleCompassState.questionIndex + 1,
+              currentQuestion: result.nextQuestion,
+              questionId: result.nextQuestion.id
+            };
+          }
+        }
+      }
+
       // Handle Couple Compass responses
       let coupleCompassUpdate = {};
       if (coupleCompassState?.active && coupleCompassState?.questionId) {
