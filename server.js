@@ -2483,12 +2483,44 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
       prompt += `\n\n🧭 COUPLE COMPASS TIME: They're ready! Introduce it naturally: "You know what? I want to understand what you're looking for... wanna play something with me? It's called Couple Compass 🧭"`;
     }
 
-    if (coupleCompassState && coupleCompassState.active) {
+    if (coupleCompassState?.questionIndex !== undefined) {
+      const questionNumber = coupleCompassState.questionIndex + 1;
+      prompt += `\n\nCurrent Progress: Question ${questionNumber} of 6`;
+    }
+
+    if (coupleCompassState && coupleCompassState.active && coupleCompassState.currentQuestion) {
       const currentQuestion = coupleCompassState.currentQuestion;
-      prompt += `\n\n🧭 COUPLE COMPASS ACTIVE:
-Current question: ${currentQuestion.text}
-Options: ${currentQuestion.options.map(o => `${o.emoji} ${o.text}`).join(', ')}
-Ask conversationally, then present the options naturally.`;
+      prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
+
+YOU MUST ONLY OUTPUT THIS EXACT FORMAT:
+1. ONE playful reaction to their last answer (if they just answered)
+2. Then IMMEDIATELY show:
+
+${currentQuestion.text}
+
+A) ${currentQuestion.options[0].emoji} ${currentQuestion.options[0].text}
+B) ${currentQuestion.options[1].emoji} ${currentQuestion.options[1].text}  
+C) ${currentQuestion.options[2].emoji} ${currentQuestion.options[2].text}
+D) ${currentQuestion.options[3].emoji} ${currentQuestion.options[3].text}
+
+CRITICAL RULES:
+- NO follow-up questions
+- NO additional conversation  
+- NO asking "how do you feel about that?"
+- ONLY the reaction + next question
+- Keep reaction to ONE sentence MAX
+
+Example output:
+"Family proximity with privacy - smart! 😊
+
+Question 2/6: Money talk! 💰 In relationships, what feels fair?
+
+A) 💪 I'll provide fully
+B) 🤝 I'll lead, but we share
+C) ⚖️ 50-50 feels fair  
+D) 💝 I contribute more emotionally"
+
+NOTHING ELSE. Just reaction + question + options.`;
     }
 
     if (should_switch_topic) {
