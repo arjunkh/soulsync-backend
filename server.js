@@ -2406,7 +2406,7 @@ class AriaPersonality {
   }
 
   // Generate warm, PRD-style system prompt
-  generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null) {
+  generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
     const {
       mood,
       energy,
@@ -3466,7 +3466,8 @@ app.post('/api/chat', async (req, res) => {
         updatedProfile.personalityData,
         conversationHistory,
         user,
-        gameState || coupleCompassState // Use new gameState if available
+        coupleCompassState,
+        gameState
       );
 
       // Prepare messages with natural conversation prompt
