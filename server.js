@@ -3286,7 +3286,7 @@ app.post('/api/chat', async (req, res) => {
       }
 
       // Detect Couple Compass acceptance
-      const userSaidYesToCompass = false; // Initialize as false
+      let userSaidYesToCompass = false; // Initialize as false
       if (analysis.couple_compass_ready) {
         const userMessage = latestUserMessage.content.toLowerCase();
         const acceptanceWords = ['yes', 'sure', 'ok', 'okay', 'let\'s play', 'let\'s go', 'yeah', 'yep', 'absolutely', 'definitely'];
