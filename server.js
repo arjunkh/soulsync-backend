@@ -2488,39 +2488,25 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
       prompt += `\n\nCurrent Progress: Question ${questionNumber} of 6`;
     }
 
-    if (coupleCompassState && coupleCompassState.active && coupleCompassState.currentQuestion) {
-      const currentQuestion = coupleCompassState.currentQuestion;
-      prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
+    if (gameState && gameState.active && gameState.currentQuestion) {
+      const currentQuestion = gameState.currentQuestion;
+      prompt += `\n\n🎮 COUPLE COMPASS GAME MODE:
 
-YOU MUST ONLY OUTPUT THIS EXACT FORMAT:
-1. ONE playful reaction to their last answer (if they just answered)
-2. Then IMMEDIATELY show:
+STRICT RULES:
+1. Show the user's last answer reaction: "${gameState.lastResponse}"
+2. Then IMMEDIATELY show the next question:
 
 ${currentQuestion.text}
-
 A) ${currentQuestion.options[0].emoji} ${currentQuestion.options[0].text}
-B) ${currentQuestion.options[1].emoji} ${currentQuestion.options[1].text}  
+B) ${currentQuestion.options[1].emoji} ${currentQuestion.options[1].text}
 C) ${currentQuestion.options[2].emoji} ${currentQuestion.options[2].text}
 D) ${currentQuestion.options[3].emoji} ${currentQuestion.options[3].text}
 
-CRITICAL RULES:
-- NO follow-up questions
-- NO additional conversation  
-- NO asking "how do you feel about that?"
-- ONLY the reaction + next question
-- Keep reaction to ONE sentence MAX
-
-Example output:
-"Family proximity with privacy - smart! 😊
-
-Question 2/6: Money talk! 💰 In relationships, what feels fair?
-
-A) 💪 I'll provide fully
-B) 🤝 I'll lead, but we share
-C) ⚖️ 50-50 feels fair  
-D) 💝 I contribute more emotionally"
-
-NOTHING ELSE. Just reaction + question + options.`;
+NO OTHER CONVERSATION. This is a rapid-fire game.`;
+    } else if (gameState && gameState.justCompleted) {
+      prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
+Share the synthesis: "${gameState.synthesis}"
+Then return to normal conversation.`;
     }
 
     if (should_switch_topic) {
@@ -3312,7 +3298,7 @@ app.post('/api/chat', async (req, res) => {
         };
       }
 
-      // Check if user is answering a Couple Compass question
+      // Process A/B/C/D answers during active Couple Compass game
       if (!gameState && coupleCompassState?.active) {
         const userAnswer = latestUserMessage.content.trim().toUpperCase();
         const validAnswers = ['A', 'B', 'C', 'D'];
@@ -3323,18 +3309,48 @@ app.post('/api/chat', async (req, res) => {
           const answerIndex = validAnswers.indexOf(userAnswer);
           const selectedAnswer = currentQuestion.options[answerIndex].value;
 
-          // Process the answer and get next question
+          // Process answer using existing method
           const result = coupleCompass.processAnswer(currentQuestion.id, selectedAnswer, user.user_name);
 
+          // Store answer in database
+          await pool.query(`
+            UPDATE users
+            SET couple_compass_data = jsonb_set(
+              COALESCE(couple_compass_data, '{}'::jsonb),
+              '{${currentQuestion.id}}',
+              '"${selectedAnswer}"'
+            )
+            WHERE user_id = $1
+          `, [userId]);
+
           if (!result.complete) {
-            // Create state for next question
+            // Set up next question
             gameState = {
               active: true,
               questionIndex: coupleCompassState.questionIndex + 1,
               currentQuestion: result.nextQuestion,
-              questionId: result.nextQuestion.id
+              questionId: result.nextQuestion.id,
+              lastResponse: result.response
+            };
+          } else {
+            // Game completed
+            gameState = {
+              active: false,
+              justCompleted: true,
+              synthesis: result.synthesis
             };
           }
+        } else {
+          // Invalid input during game
+          return res.json({
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: "Please choose A, B, C, or D 😊"
+              }
+            }],
+            userInsights: { ...userInsights, coupleCompassActive: true }
+          });
         }
       }
 
