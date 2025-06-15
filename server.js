@@ -3373,6 +3373,17 @@ app.post('/api/chat', async (req, res) => {
               justCompleted: true,
               synthesis: result.synthesis
             };
+            
+            // Mark as complete in database
+            await pool.query(`
+              UPDATE users
+              SET personality_data = jsonb_set(
+                COALESCE(personality_data, '{}'::jsonb),
+                '{couple_compass_complete}',
+                'true'
+              )
+              WHERE user_id = $1
+            `, [userId]);
           }
         } else {
           // Invalid input during game
@@ -3383,7 +3394,11 @@ app.post('/api/chat', async (req, res) => {
                 content: "Please choose A, B, C, or D 😊"
               }
             }],
-            userInsights: { ...userInsights, coupleCompassActive: true }
+            userInsights: { 
+              ...generateUserInsights(analysis, { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} }, user, conversationCount + 1),
+              coupleCompassActive: true,
+              coupleCompassGameState: coupleCompassState // Pass current state back
+            }
           });
         }
       }
@@ -3489,7 +3504,8 @@ app.post('/api/chat', async (req, res) => {
           }],
           userInsights: {
             ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
-            offTopicHandled: true
+            offTopicHandled: true,
+            coupleCompassGameState: gameState || coupleCompassState // Always include game state
           }
         });
       }
@@ -3578,13 +3594,14 @@ app.post('/api/chat', async (req, res) => {
         sessionSummary
       );
 
-      // Return enhanced response
+      // Return enhanced response - CRITICAL FIX: Always include game state
       res.json({
         ...data,
         userInsights: {
           ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
           reportGenerated,
-          coupleCompassResult: analysis.couple_compass_result
+          coupleCompassResult: analysis.couple_compass_result,
+          coupleCompassGameState: gameState || coupleCompassState // ALWAYS include current game state
         }
       });
 
