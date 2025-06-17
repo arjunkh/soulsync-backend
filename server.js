@@ -3559,13 +3559,15 @@ app.post('/api/chat', async (req, res) => {
           `, [userId]);
 
           if (!result.complete) {
-            // Set up next question
+            // Set up next question with exact text for strict prompt
+            const exactQuestionText = getCoupleCompassQuestionText(coupleCompassState.questionIndex + 1);
             gameState = {
               active: true,
               questionIndex: coupleCompassState.questionIndex + 1,
               currentQuestion: result.nextQuestion,
               questionId: result.nextQuestion.id,
-              lastResponse: result.response
+              lastResponse: result.response,
+              exactQuestionText: exactQuestionText
             };
           } else {
             // Game completed
