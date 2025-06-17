@@ -2140,12 +2140,12 @@ function getCoupleCompassQuestionText(questionIndex) {
 
   if (questionIndex >= 0 && questionIndex < questions.length) {
     const q = questions[questionIndex];
-    return `${q.text}
-
-A) ${q.options[0]}
-B) ${q.options[1]}
-C) ${q.options[2]}
-D) ${q.options[3]}`;
+    let formattedQuestion = q.text + '\n\n';
+    formattedQuestion += 'A) ' + q.options[0] + '\n';
+    formattedQuestion += 'B) ' + q.options[1] + '\n';
+    formattedQuestion += 'C) ' + q.options[2] + '\n';
+    formattedQuestion += 'D) ' + q.options[3];
+    return formattedQuestion;
   }
 
   return null;
