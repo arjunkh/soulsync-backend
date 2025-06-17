@@ -2697,8 +2697,17 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     if (gameState && gameState.active && gameState.currentQuestion) {
       const questionIndex = gameState.questionIndex;
       const exactQuestion = getCoupleCompassQuestionText(questionIndex);
-      
-      prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
+
+      // CRITICAL: Check if we have a valid question
+      if (!exactQuestion || questionIndex >= 6) {
+        // No more questions - game is complete
+        prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
+The Couple Compass journey is complete! You've answered all 6 questions. 
+Based on their responses, share a warm synthesis about what you've learned about their relationship values and what kind of partner would be perfect for them.
+Then return to normal conversation - do NOT ask any more Couple Compass questions.`;
+      } else {
+        // Valid question exists - show it
+        prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
 
 YOU MUST ONLY OUTPUT THIS EXACT FORMAT:
 1. ONE playful reaction to their last answer (if they just answered)
@@ -2714,7 +2723,9 @@ CRITICAL RULES:
 - Keep reaction to ONE sentence MAX
 - The reaction must ONLY reference their ANSWER choice, not ask new questions
 - Output EXACTLY the question text and options shown above
-- DO NOT modify the question wording AT ALL`;
+- DO NOT modify the question wording AT ALL
+- This is question ${questionIndex + 1} of 6 ONLY`;
+      }
     } else if (gameState && gameState.justCompleted) {
       prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
 Share the synthesis: "${gameState.synthesis}"
