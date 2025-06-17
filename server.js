@@ -2629,7 +2629,7 @@ class AriaPersonality {
     return bridges;
   }
 
-  // Generate warm, PRD-style system prompt
+  // Generate warm, PRD-style system prompt WITH MEMORY ENHANCEMENT
   generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
     const {
       mood,
@@ -2647,6 +2647,7 @@ class AriaPersonality {
     const currentIntimacyLevel =
       userProfile.relationship_context?.intimacy_level || 0;
     const personalityData = userProfile.personality_data || {};
+    const coupleCompassData = userProfile.couple_compass_data || {};
 
     // PRD-STYLE PROMPT with Aria's personality
     let prompt = `You are Aria, ${user?.user_name || 'babe'}'s warm, flirty AI companion who genuinely cares about understanding them.
@@ -2667,65 +2668,43 @@ class AriaPersonality {
 
 Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacyLevel}`;
 
-    // Memory section with personal details
-    const memories = [];
+    // === MEMORY ENHANCEMENT SECTION ===
+    // Add comprehensive memory context with all discovered data
+    const memoryContext = generateMemoryContext(user, personalityData, coupleCompassData);
+    if (memoryContext) {
+      prompt += memoryContext;
+    }
+
+    // === CONVERSATION EXAMPLES BASED ON MEMORY ===
+    prompt += '\n\n💭 CONVERSATION EXAMPLES WITH MEMORY:';
     
-    // Extract specific interests and preferences
-    if (personalityData.interests && Array.isArray(personalityData.interests)) {
-      personalityData.interests.forEach(interest => {
-        if (interest === 'food_cooking') memories.push('loves cooking');
-        if (interest === 'sports') memories.push('sports enthusiast');
-        if (interest === 'movies') memories.push('movie buff');
-        if (interest === 'relationships') memories.push('values deep connections');
-      });
+    // Example for discovered MBTI trait
+    if (personalityData?.mbti_confidence_scores?.E_I <= 25) {
+      prompt += '\nUser: "Had a long day at work"\nYou: "I know how draining that can be for you, especially as someone who needs quiet time to recharge. What helps you decompress? 💕"';
+    }
+    
+    // Example for known interests
+    if (personalityData?.interests?.includes('cooking')) {
+      prompt += '\nUser: "Making dinner"\nYou: "Ooh, what\'s on the menu tonight? I remember you love cooking - there\'s something so intimate about creating something delicious, right?"';
+    }
+    
+    // Example for love language
+    if (personalityData?.love_language_hints?.includes('physical_touch')) {
+      prompt += '\nUser: "Miss having someone around"\nYou: "As a physical touch person, that must feel especially hard. The little touches throughout the day mean everything to you, don\'t they?"';
     }
 
-    // Extract specific preferences
-    if (personalityData.user_preferences) {
-      Object.entries(personalityData.user_preferences).forEach(([key, value]) => {
-        if (value) memories.push(`${key}: ${value}`);
-      });
-    }
-
-    if (memories.length > 0) {
-      const uniqueMemories = [...new Set(memories)];
-      prompt += `\n\n💭 REMEMBER: ${user?.user_name || 'They'} ${uniqueMemories.slice(0, 4).join(', ')}`;
-    }
-
-    // Aria's personal sharing context
-    const shareMoment = conversationCount % 4 === 0; // Share something personal every 4 messages
-    if (shareMoment) {
-      prompt += `\n\n💝 SHARE SOMETHING: Tell them about your morning/coffee/a thought that crossed your mind.`;
-    }
-
-    // Handle different conversation states
-    if (off_topic?.detected) {
-      prompt += `\n\n🎯 REDIRECT: They asked an off-topic question. Playfully redirect: "Babe, I'm better with hearts than homework! What's really on your mind?"`;
-    }
-
-    if (couple_compass_ready) {
-      prompt += `\n\n🧭 COUPLE COMPASS TIME: They're ready! Introduce it naturally: "You know what? I want to understand what you're looking for... wanna play something with me? It's called Couple Compass 🧭"`;
-    }
-
-    if (coupleCompassState?.questionIndex !== undefined) {
-      const questionNumber = coupleCompassState.questionIndex + 1;
-      prompt += `\n\nCurrent Progress: Question ${questionNumber} of 6`;
-    }
-
-      if (gameState && gameState.active && gameState.currentQuestion) {
-        const currentQuestion = gameState.currentQuestion;
-        prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
+    // === COUPLE COMPASS EXACT QUESTIONS ===
+    if (gameState && gameState.active && gameState.currentQuestion) {
+      const questionIndex = gameState.questionIndex;
+      const exactQuestion = getCoupleCompassQuestionText(questionIndex);
+      
+      prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
 
 YOU MUST ONLY OUTPUT THIS EXACT FORMAT:
 1. ONE playful reaction to their last answer (if they just answered)
 2. Then IMMEDIATELY show:
 
-${currentQuestion.text}
-
-A) ${currentQuestion.options[0].emoji} ${currentQuestion.options[0].text}
-B) ${currentQuestion.options[1].emoji} ${currentQuestion.options[1].text}  
-C) ${currentQuestion.options[2].emoji} ${currentQuestion.options[2].text}
-D) ${currentQuestion.options[3].emoji} ${currentQuestion.options[3].text}
+${exactQuestion}
 
 CRITICAL RULES:
 - NO follow-up questions
@@ -2734,15 +2713,22 @@ CRITICAL RULES:
 - ONLY the reaction + next question
 - Keep reaction to ONE sentence MAX
 - The reaction must ONLY reference their ANSWER choice, not ask new questions
-- NEVER ask questions like "What hobby would you want?" or "What movie?"
-- After the reaction, IMMEDIATELY show the next Couple Compass question
-- If user says anything like "go back to game", ignore previous response and show next question
-- DO NOT ask about hobbies, movies, or anything not in the 6 questions
-- STRICTLY follow the format: [reaction]. [next question with options]`;
+- Output EXACTLY the question text and options shown above
+- DO NOT modify the question wording AT ALL`;
     } else if (gameState && gameState.justCompleted) {
       prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
 Share the synthesis: "${gameState.synthesis}"
 Then return to normal conversation.`;
+    }
+
+    // === CONTEXTUAL GUIDANCE ===
+    // Handle different conversation states
+    if (off_topic?.detected) {
+      prompt += `\n\n🎯 REDIRECT: They asked an off-topic question. Playfully redirect: "Babe, I'm better with hearts than homework! What's really on your mind?"`;
+    }
+
+    if (couple_compass_ready && !personalityData?.couple_compass_complete) {
+      prompt += `\n\n🧭 COUPLE COMPASS TIME: They're ready! Introduce it naturally: "You know what? I want to understand what you're looking for... wanna play something with me? It's called Couple Compass 🧭"`;
     }
 
     if (should_switch_topic) {
@@ -2758,7 +2744,7 @@ Then return to normal conversation.`;
     }
 
     // Core personality reminder
-    prompt += `\n\n✨ REMEMBER: You're their flirty best friend who's genuinely fascinated by who they are. Make them feel seen, understood, and a little bit special.`;
+    prompt += `\n\n✨ REMEMBER: You're their flirty best friend who REMEMBERS EVERYTHING about them. Reference past discoveries naturally. Make them feel seen, understood, and a little bit special.`;
 
     return prompt;
   }
