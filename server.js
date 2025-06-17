@@ -1931,6 +1931,221 @@ class ConversationFlowEngine {
   }
 }
 
+// ========== MEMORY ENHANCEMENT HELPER FUNCTIONS ==========
+// These functions format discovered user data for the system prompt
+
+// Format discovered MBTI with confidence levels and "don't ask" rules
+function formatDiscoveredMBTI(mbtiScores) {
+  if (!mbtiScores || Object.keys(mbtiScores).length === 0) {
+    return '';
+  }
+
+  const dimensions = {
+    E_I: { high: 'Extrovert', low: 'Introvert', question: 'social preferences' },
+    S_N: { high: 'Sensing', low: 'Intuition', question: 'concrete vs abstract thinking' },
+    T_F: { high: 'Thinking', low: 'Feeling', question: 'logic vs feelings in decisions' },
+    J_P: { high: 'Judging', low: 'Perceiving', question: 'planning vs flexibility' }
+  };
+
+  let mbtiSection = '🧠 DISCOVERED PERSONALITY:\n';
+
+  Object.entries(mbtiScores).forEach(([dimension, score]) => {
+    const dimInfo = dimensions[dimension];
+    if (score >= 75) {
+      mbtiSection += `- ${dimension.replace('_', '/')}: ${dimInfo.high} (${Math.round(score)}% confident) - DON'T ask about ${dimInfo.question}\n`;
+    } else if (score <= 25) {
+      mbtiSection += `- ${dimension.replace('_', '/')}: ${dimInfo.low} (${Math.round(100 - score)}% confident) - DON'T ask about ${dimInfo.question}\n`;
+    } else {
+      mbtiSection += `- ${dimension.replace('_', '/')}: Still exploring (${Math.round(score)}%) - Can ask about ${dimInfo.question}\n`;
+    }
+  });
+
+  return mbtiSection;
+}
+
+// Format known preferences with behavioral instructions
+function formatKnownPreferences(personalityData) {
+  if (!personalityData) return '';
+
+  let preferencesSection = '💕 ALREADY KNOW:\n';
+
+  // Love languages
+  if (personalityData.love_language_hints?.length > 0) {
+    const languages = personalityData.love_language_hints
+      .map(l => l.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
+      .join(', ');
+    preferencesSection += `- Love Language: ${languages} - DON'T ask how they feel loved\n`;
+  }
+
+  // Interests
+  if (personalityData.interests?.length > 0) {
+    const interests = personalityData.interests
+      .map(i => i.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
+      .join(', ');
+    preferencesSection += `- Interests: ${interests} - BUILD on these topics\n`;
+  }
+
+  // Attachment style
+  if (personalityData.attachment_hints?.length > 0) {
+    const primaryAttachment = personalityData.attachment_hints[0]
+      .replace('_tendency', '')
+      .replace(/\b\w/g, c => c.toUpperCase());
+    preferencesSection += `- Attachment: ${primaryAttachment} - Reference this in relationship discussions\n`;
+  }
+
+  // Couple Compass completion
+  if (personalityData.couple_compass_complete) {
+    preferencesSection += `- Has completed Couple Compass - DON'T retrigger the game\n`;
+  }
+
+  // User preferences (favorites)
+  if (personalityData.user_preferences) {
+    Object.entries(personalityData.user_preferences).forEach(([key, value]) => {
+      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      preferencesSection += `- ${formattedKey}: ${value} - Reference naturally in conversation\n`;
+    });
+  }
+
+  return preferencesSection;
+}
+
+// Generate comprehensive memory context with behavioral rules
+function generateMemoryContext(user, personalityData, coupleCompassData) {
+  let memoryContext = '\n\n📚 USER MEMORY & CONTEXT:\n';
+
+  // Add MBTI discovery status
+  if (personalityData?.mbti_confidence_scores) {
+    memoryContext += '\n' + formatDiscoveredMBTI(personalityData.mbti_confidence_scores);
+  }
+
+  // Add known preferences
+  memoryContext += '\n' + formatKnownPreferences(personalityData);
+
+  // Add behavioral rules based on discoveries
+  memoryContext += '\n⚠️ BEHAVIORAL RULES:\n';
+
+  // NEVER ASK rules
+  memoryContext += '\n❌ NEVER ASK ABOUT:\n';
+  const mbtiScores = personalityData?.mbti_confidence_scores || {};
+
+  if (mbtiScores.E_I >= 75 || mbtiScores.E_I <= 25) {
+    memoryContext += '- Introvert/Extrovert preferences (already confirmed)\n';
+  }
+  if (mbtiScores.J_P >= 75 || mbtiScores.J_P <= 25) {
+    memoryContext += '- Planning vs flexibility preferences (already confirmed)\n';
+  }
+  if (personalityData?.love_language_hints?.length > 0) {
+    memoryContext += '- Love languages (already discovered)\n';
+  }
+  if (personalityData?.interests?.length > 0) {
+    memoryContext += '- Basic interests (already known)\n';
+  }
+  if (personalityData?.couple_compass_complete) {
+    memoryContext += '- Couple Compass game (already completed)\n';
+  }
+
+  // BUILD ON rules
+  memoryContext += '\n✅ INSTEAD, BUILD ON:\n';
+
+  if (personalityData?.interests?.includes('food_cooking')) {
+    memoryContext += '- Reference their love for cooking when discussing relationships\n';
+  }
+  if (mbtiScores.E_I <= 25) {
+    memoryContext += '- Acknowledge their introvert nature in suggestions\n';
+  }
+  if (personalityData?.attachment_hints?.includes('secure_tendency')) {
+    memoryContext += '- Use their secure attachment style to go deeper emotionally\n';
+  }
+
+  // Add Couple Compass responses if available
+  if (coupleCompassData && Object.keys(coupleCompassData).length > 0) {
+    memoryContext += '\n🧭 COUPLE COMPASS RESPONSES:\n';
+    const compassMapping = {
+      living_arrangement: 'Living Arrangement',
+      financial_style: 'Financial Style',
+      children_vision: 'Children Vision',
+      conflict_style: 'Conflict Style',
+      ambition_balance: 'Ambition Balance',
+      big_mismatch: 'Flexibility in Differences'
+    };
+
+    Object.entries(coupleCompassData).forEach(([key, value]) => {
+      if (compassMapping[key]) {
+        memoryContext += `- ${compassMapping[key]}: ${value.replace(/_/g, ' ')}\n`;
+      }
+    });
+  }
+
+  return memoryContext;
+}
+
+// Get exact Couple Compass question text
+function getCoupleCompassQuestionText(questionIndex) {
+  const questions = [
+    {
+      text: "Okay, let's dream a little... Where do you imagine living post-marriage? 🏠",
+      options: [
+        "👨‍👩‍👧‍👦 With your parents",
+        "🏘️ Near them, but our own space",
+        "🌆 Fresh start in a new city",
+        "💕 Wherever love leads"
+      ]
+    },
+    {
+      text: "Money talk - unsexy but important 😅 What feels right to you in a partnership?",
+      options: [
+        "💪 I'll provide fully",
+        "🤝 I'll lead, but we share",
+        "⚖️ 50-50 feels fair",
+        "💝 I contribute more emotionally"
+      ]
+    },
+    {
+      text: "Kids? No kids? Let's talk about little humans... 👶",
+      options: [
+        "🤱 Yes, and I'll be hands-on",
+        "👨‍👩‍👧 Yes, but I'll need support",
+        "🤔 Haven't decided yet",
+        "✨ No, and I'm clear on that"
+      ]
+    },
+    {
+      text: "Real talk - how do you handle it when things get tense with someone you love? 💭",
+      options: [
+        "💬 Talk it out immediately",
+        "🚶 Need space first, then talk",
+        "🤲 Prefer someone to mediate",
+        "🤐 I tend to avoid conflict"
+      ]
+    },
+    {
+      text: "Let's dream big - or small! What does your ideal life pace look like? 🌟",
+      options: [
+        "🚀 Big career goals, high achiever",
+        "⚡ Success with work-life balance",
+        "🏡 Family and peace over ambition",
+        "🌿 Simple, quiet life is the dream"
+      ]
+    },
+    {
+      text: "Okay, hypothetical time... Your partner earns more, wants to delay kids, and prefers living away from family. You? 🤷",
+      options: [
+        "💭 Let's talk and understand",
+        "😕 I'd feel uncertain",
+        "🚫 Might be a dealbreaker",
+        "💕 Love makes me flexible"
+      ]
+    }
+  ];
+
+  if (questionIndex >= 0 && questionIndex < questions.length) {
+    const q = questions[questionIndex];
+    return `${q.text}\n\nA) ${q.options[0]}\nB) ${q.options[1]}\nC) ${q.options[2]}\nD) ${q.options[3]}`;
+  }
+
+  return null;
+}
+
 // Enhanced Aria Personality with PRD Vision
 class AriaPersonality {
   constructor() {
