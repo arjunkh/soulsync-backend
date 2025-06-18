@@ -45,6 +45,27 @@ async function initializeDatabase() {
       )
     `);
 
+    // Add personal memories table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_memories (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) REFERENCES users(user_id) ON DELETE CASCADE,
+        memory TEXT NOT NULL,
+        context TEXT,
+        category VARCHAR(50),
+        confidence DECIMAL(3,2) DEFAULT 0.85,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_referenced TIMESTAMP,
+        reference_count INTEGER DEFAULT 0
+      )
+    `);
+
+    // Add index for faster queries
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_memories_user_id 
+      ON user_memories(user_id)
+    `);
+
     // Conversations table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS conversations (
@@ -2151,6 +2172,164 @@ D) ${q.options[3]}`;
   return null;
 }
 
+// ========== INTELLIGENT MEMORY SYSTEM ==========
+
+// Extract memorable information using AI
+async function extractMemorableInformation(userMessage, aiResponse, conversationContext) {
+  // Build a smart extraction prompt
+  const extractionPrompt = `Analyze this conversation and extract specific personal facts about the user that should be remembered.
+
+User said: "${userMessage}"
+Assistant responded: "${aiResponse}"
+
+Extract ONLY concrete, personal facts like:
+- Favorites (people, things, places)
+- Personal details (job, hobbies, family)
+- Preferences and interests
+- Life events or plans
+- Skills or achievements
+
+Return as JSON array. Each item should have:
+- memory: The fact to remember (e.g., "Favorite actor is Salman Khan")
+- category: One of [favorites, personal, preferences, life_events, interests]
+- confidence: 0.0-1.0 based on how certain this fact is
+
+If nothing memorable, return empty array.
+Example: [{"memory": "Loves cooking Italian food", "category": "interests", "confidence": 0.9}]`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a memory extraction system. Extract only factual information, not opinions or temporary states.' },
+          { role: 'user', content: extractionPrompt }
+        ],
+        max_tokens: 200,
+        temperature: 0.3 // Lower temperature for consistent extraction
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Memory extraction failed:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+
+    try {
+      // Parse JSON response
+      const memories = JSON.parse(content);
+      return Array.isArray(memories) ? memories : [];
+    } catch (parseError) {
+      console.error('Failed to parse memory extraction:', parseError);
+      return [];
+    }
+  } catch (error) {
+    console.error('Memory extraction error:', error);
+    return [];
+  }
+}
+
+// Store extracted memories in database
+async function storeUserMemories(userId, memories, context) {
+  if (!memories || memories.length === 0) return;
+
+  try {
+    for (const memory of memories) {
+      // Check if similar memory exists
+      const existing = await pool.query(
+        `SELECT id FROM user_memories 
+         WHERE user_id = $1 AND memory = $2`,
+        [userId, memory.memory]
+      );
+
+      if (existing.rows.length === 0) {
+        // Insert new memory
+        await pool.query(
+          `INSERT INTO user_memories (user_id, memory, context, category, confidence)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [userId, memory.memory, context, memory.category || 'general', memory.confidence || 0.85]
+        );
+        console.log(`💾 Stored memory for ${userId}: ${memory.memory}`);
+      } else {
+        // Update confidence and last referenced
+        await pool.query(
+          `UPDATE user_memories 
+           SET confidence = LEAST(confidence + 0.1, 1.0),
+               last_referenced = CURRENT_TIMESTAMP,
+               reference_count = reference_count + 1
+           WHERE id = $1`,
+          [existing.rows[0].id]
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Error storing memories:', error);
+  }
+}
+
+// Load user memories from database
+async function loadUserMemories(userId, limit = 20) {
+  try {
+    const result = await pool.query(
+      `SELECT memory, category, confidence, created_at
+       FROM user_memories
+       WHERE user_id = $1
+       ORDER BY confidence DESC, created_at DESC
+       LIMIT $2`,
+      [userId, limit]
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error('Error loading memories:', error);
+    return [];
+  }
+}
+
+// Format memories for system prompt
+function formatMemoriesForPrompt(memories) {
+  if (!memories || memories.length === 0) return '';
+
+  let memorySection = '\n\n💭 PERSONAL MEMORIES (Reference naturally when relevant):\n';
+
+  // Group by category
+  const grouped = memories.reduce((acc, mem) => {
+    const cat = mem.category || 'general';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(mem);
+    return acc;
+  }, {});
+
+  // Format each category
+  Object.entries(grouped).forEach(([category, mems]) => {
+    const categoryNames = {
+      favorites: '⭐ Favorites',
+      personal: '👤 Personal Details',
+      preferences: '💝 Preferences',
+      life_events: '🎯 Life Events',
+      interests: '🎨 Interests',
+      general: '📌 Other'
+    };
+
+    memorySection += `\n${categoryNames[category] || category}:\n`;
+    mems.forEach(mem => {
+      memorySection += `- ${mem.memory}\n`;
+    });
+  });
+
+  memorySection += '\n🎯 Use these memories to make conversation personal and warm, like talking to a friend who remembers.';
+
+  return memorySection;
+}
+
 // Enhanced Aria Personality with PRD Vision
 class AriaPersonality {
   constructor() {
@@ -2635,7 +2814,7 @@ class AriaPersonality {
   }
 
   // Generate warm, PRD-style system prompt WITH MEMORY ENHANCEMENT
-  generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
+  async generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
     const {
       mood,
       energy,
@@ -2676,8 +2855,17 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
     // === MEMORY ENHANCEMENT SECTION ===
     // Add comprehensive memory context with all discovered data
     const memoryContext = generateMemoryContext(user, personalityData, coupleCompassData);
+    // Load personal memories
+    const userMemories = await loadUserMemories(user.user_id);
+    const memoriesSection = formatMemoriesForPrompt(userMemories);
+
     if (memoryContext) {
       prompt += memoryContext;
+    }
+
+    // Add personal memories section
+    if (memoriesSection) {
+      prompt += memoriesSection;
     }
 
     // === CONVERSATION EXAMPLES BASED ON MEMORY ===
@@ -3704,11 +3892,18 @@ app.post('/api/chat', async (req, res) => {
         console.log(`🆙 User ${userId} leveled up to intimacy level ${currentIntimacyLevel + 1}`);
       }
       
-      // Generate intro message for new users
+      // Generate intro message
       let systemMessages = [];
-      if (user.total_conversations === 0) {
+      const userMemories = await loadUserMemories(userId);
+
+      if (user.total_conversations === 0 || userMemories.length === 0) {
         const introMessage = aria.generateIntroMessage(user.user_name, user.user_gender);
         systemMessages.push({ role: 'assistant', content: introMessage });
+      } else {
+        // Returning user with memories
+        const memoryHighlight = userMemories[0]?.memory || '';
+        const welcomeBack = `Welcome back, ${user.user_name}! 💕 ${memoryHighlight ? `I remember you ${memoryHighlight.toLowerCase()}. ` : ''}How have you been?`;
+        systemMessages.push({ role: 'assistant', content: welcomeBack });
       }
 
       // Handle off-topic redirect
@@ -3730,7 +3925,7 @@ app.post('/api/chat', async (req, res) => {
       }
       
       // Generate system prompt with PRD personality
-      let adaptivePrompt = aria.generateSystemPrompt(
+      let adaptivePrompt = await aria.generateSystemPrompt(
         analysis,
         updatedProfile.personalityData,
         conversationHistory,
@@ -3795,7 +3990,7 @@ app.post('/api/chat', async (req, res) => {
       
       // Save conversation with enhanced metadata
       await saveConversation(
-        userId, 
+        userId,
         [latestUserMessage, { role: 'assistant', content: data.choices[0].message.content }],
         {
           ...analysis,
@@ -3812,6 +4007,17 @@ app.post('/api/chat', async (req, res) => {
         },
         sessionSummary
       );
+
+      // Extract and store memories from this exchange
+      const memories = await extractMemorableInformation(
+        latestUserMessage.content,
+        data.choices[0].message.content,
+        `${analysis.current_topic || 'general conversation'}`
+      );
+
+      if (memories.length > 0) {
+        await storeUserMemories(userId, memories, latestUserMessage.content);
+      }
 
       // Return enhanced response - CRITICAL FIX: Always include game state
       res.json({
