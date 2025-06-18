@@ -119,6 +119,23 @@ async function initializeDatabase() {
       )
     `);
 
+    // Add age and additional demographic columns
+    await pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS age INTEGER CHECK (age >= 18 AND age <= 100)
+    `);
+
+    // While we're at it, add other demographic columns for future use
+    await pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS income_range VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS birth_date DATE,
+      ADD COLUMN IF NOT EXISTS birth_time TIME,
+      ADD COLUMN IF NOT EXISTS birth_place VARCHAR(200)
+    `);
+
+    console.log('✅ Added demographic columns (age, income_range, birth details)');
+
     // Add initial admin numbers
     await pool.query(`
       INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status) 
@@ -218,7 +235,7 @@ async function trackAllowlistAccess(phoneNumber) {
 }
 
 // Enhanced user creation with complete profile
-async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
+async function getOrCreateUserWithPhone(phoneNumber, userName, userGender, userAge) {
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     
@@ -240,14 +257,15 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
     if (result.rows.length === 0) {
       // Create new user with complete profile
       result = await pool.query(
-        `INSERT INTO users (user_id, phone_number, user_name, user_gender, personality_data, relationship_context, couple_compass_data, total_conversations) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        `INSERT INTO users (user_id, phone_number, user_name, user_gender, age, personality_data, relationship_context, couple_compass_data, total_conversations) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
         [
-          userId, 
-          normalizedPhone, 
-          userName, 
+          userId,
+          normalizedPhone,
+          userName,
           userGender,
-          { name: userName, gender: userGender }, 
+          userAge,
+          { name: userName, gender: userGender, age: userAge },
           { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 },
           {},
           0
@@ -258,12 +276,13 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender) {
       // Update existing user with any new info and last_seen
       await pool.query(`
         UPDATE users 
-        SET 
+        SET
           last_seen = CURRENT_TIMESTAMP,
           user_name = COALESCE($2, user_name),
-          user_gender = COALESCE($3, user_gender)
+          user_gender = COALESCE($3, user_gender),
+          age = COALESCE($4, age)
         WHERE phone_number = $1`,
-        [normalizedPhone, userName, userGender]
+        [normalizedPhone, userName, userGender, userAge]
       );
       result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [normalizedPhone]);
       console.log(`✅ Updated existing user: ${result.rows[0].user_id}`);
@@ -281,7 +300,7 @@ app.post('/api/verify-phone', async (req, res) => {
   try {
     console.log('📱 Phone verification request received:', req.body);
     
-    const { phoneNumber, userName, userGender } = req.body;
+    const { phoneNumber, userName, userGender, userAge } = req.body;
     
     // Validate required fields
     if (!phoneNumber) {
@@ -307,6 +326,14 @@ app.post('/api/verify-phone', async (req, res) => {
         message: 'Gender is required' 
       });
     }
+
+    if (!userAge || userAge < 18) {
+      console.log('❌ Missing or invalid user age');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Age is required (must be 18 or above)' 
+      });
+    }
     
     console.log(`📱 Verifying: ${userName} (${userGender}) - ${phoneNumber}`);
     
@@ -317,7 +344,7 @@ app.post('/api/verify-phone', async (req, res) => {
       console.log('✅ Phone verification successful');
       
       // Create or get user with complete profile
-      const user = await getOrCreateUserWithPhone(normalizedPhone, userName.trim(), userGender);
+      const user = await getOrCreateUserWithPhone(normalizedPhone, userName.trim(), userGender, userAge);
       
       res.json({
         success: true,
