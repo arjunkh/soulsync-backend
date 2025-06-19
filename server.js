@@ -1768,6 +1768,288 @@ class MBTIScenarioEngine {
     // Cap at reasonable maximum
     return Math.min(boost, 20);
   }
+  }
+
+// ==================== ENHANCED MBTI ANALYZER ====================
+// This class provides pattern-based MBTI detection for faster, more natural discovery
+
+class EnhancedMBTIAnalyzer {
+  constructor() {
+    // Behavioral patterns for each dimension
+    this.patterns = {
+      E_I: {
+        extrovert: {
+          behavioral: [
+            msg => (msg.match(/\b(we|us|our|everyone|friends|people|group|team)\b/gi) || []).length > 3,
+            msg => /\b(party|gathering|social|crowd|meetup|hangout)\b/i.test(msg),
+            msg => /\b(told|shared|announced|discussed with)\b.*\b(everyone|friends|group)\b/i.test(msg)
+          ],
+          linguistic: ['let\'s all', 'everyone should', 'we should get together', 'love being around'],
+          storyPatterns: [
+            msg => msg.includes('we') && msg.includes('fun'),
+            msg => /energy from.*people/i.test(msg)
+          ]
+        },
+        introvert: {
+          behavioral: [
+            msg => /\b(alone|myself|my own|personally|privately)\b/i.test(msg),
+            msg => /\b(quiet|peaceful|solitude|recharge)\b/i.test(msg),
+            msg => /\b(need.*space|time.*myself|drain.*social)\b/i.test(msg)
+          ],
+          linguistic: ['by myself', 'on my own', 'prefer texting', 'need to recharge'],
+          storyPatterns: [
+            msg => /after.*social.*need/i.test(msg),
+            msg => /prefer.*small.*group/i.test(msg)
+          ]
+        }
+      },
+      S_N: {
+        sensing: {
+          behavioral: [
+            msg => /\b\d+:\d+\s*(am|pm)?\b/i.test(msg), // Specific times
+            msg => /\b(exactly|specifically|precisely)\s*\d+/i.test(msg),
+            msg => /\b(saw|heard|felt|touched|tasted)\b/i.test(msg),
+            msg => /\b(yesterday|today|last week|on monday)\b/i.test(msg)
+          ],
+          linguistic: ['what actually happened', 'the facts are', 'in reality', 'specifically'],
+          storyPatterns: [
+            msg => this.hasSequentialOrder(msg),
+            msg => this.hasConcreteDetails(msg)
+          ]
+        },
+        intuition: {
+          behavioral: [
+            msg => /\b(imagine|wonder|possibility|potential|could be)\b/i.test(msg),
+            msg => /\b(meaning|significance|connection|pattern)\b/i.test(msg),
+            msg => /\b(future|someday|eventually|vision|dream)\b/i.test(msg),
+            msg => /\b(reminds me|similar to|like when)\b/i.test(msg)
+          ],
+          linguistic: ['what if', 'it means', 'the bigger picture', 'could lead to'],
+          storyPatterns: [
+            msg => this.hasMetaphorical(msg),
+            msg => this.hasFutureOrientation(msg)
+          ]
+        }
+      },
+      T_F: {
+        thinking: {
+          behavioral: [
+            msg => /\b(logical|rational|makes sense|reasonable|analyze)\b/i.test(msg),
+            msg => /\b(because|therefore|thus|hence|consequently)\b/i.test(msg),
+            msg => /\b(efficient|effective|practical|objective)\b/i.test(msg),
+            msg => /\b(fair|unfair|right|wrong|should)\b/i.test(msg)
+          ],
+          linguistic: ['the logical thing', 'it makes sense to', 'objectively speaking', 'pros and cons'],
+          storyPatterns: [
+            msg => this.hasLogicalStructure(msg),
+            msg => /decided.*because.*practical/i.test(msg)
+          ]
+        },
+        feeling: {
+          behavioral: [
+            msg => /\b(feel|felt|heart|care|love|hurt)\b/i.test(msg),
+            msg => /\b(important to me|values|believe in|passionate)\b/i.test(msg),
+            msg => /\b(people|harmony|together|support|help)\b/i.test(msg),
+            msg => /\b(upset|happy|comfortable|uncomfortable)\b/i.test(msg)
+          ],
+          linguistic: ['feels right', 'in my heart', 'care about', 'what matters to me'],
+          storyPatterns: [
+            msg => /decided.*because.*felt/i.test(msg),
+            msg => this.considersPeopleImpact(msg)
+          ]
+        }
+      },
+      J_P: {
+        judging: {
+          behavioral: [
+            msg => /\b(plan|planned|planning|schedule|organized)\b/i.test(msg),
+            msg => /\b(decided|decision|settled|finalized)\b/i.test(msg),
+            msg => /\b(routine|structure|order|systematic)\b/i.test(msg),
+            msg => /\b(early|on time|deadline|complete)\b/i.test(msg)
+          ],
+          linguistic: ['have it all planned', 'stick to the plan', 'need to decide', 'like things settled'],
+          storyPatterns: [
+            msg => /first.*then.*finally/i.test(msg),
+            msg => /hate.*last minute/i.test(msg)
+          ]
+        },
+        perceiving: {
+          behavioral: [
+            msg => /\b(flexible|spontaneous|adapt|go with flow)\b/i.test(msg),
+            msg => /\b(options open|might|maybe|we\'ll see)\b/i.test(msg),
+            msg => /\b(last minute|improvise|figure it out)\b/i.test(msg),
+            msg => /\b(depends|whatever happens|see how it goes)\b/i.test(msg)
+          ],
+          linguistic: ['keep options open', 'see what happens', 'play it by ear', 'go with the flow'],
+          storyPatterns: [
+            msg => /decided.*last minute/i.test(msg),
+            msg => /best.*unplanned/i.test(msg)
+          ]
+        }
+      }
+    };
+  }
+
+  // Main analysis function
+  analyzeMessage(message, previousAnalysis = {}, conversationHistory = []) {
+    const analysis = {
+      dimensions: {},
+      totalConfidence: 0,
+      strongestSignals: []
+    };
+
+    // Analyze each dimension
+    ['E_I', 'S_N', 'T_F', 'J_P'].forEach(dimension => {
+      const result = this.analyzeDimension(message, dimension, conversationHistory);
+      if (result.confidence > 0) {
+        analysis.dimensions[dimension] = result;
+        analysis.totalConfidence += result.confidence;
+        
+        if (result.confidence >= 20) {
+          analysis.strongestSignals.push({
+            dimension,
+            preference: result.preference,
+            confidence: result.confidence
+          });
+        }
+      }
+    });
+
+    // Multi-message correlation
+    if (conversationHistory.length > 0) {
+      this.correlateWithHistory(analysis, conversationHistory);
+    }
+
+    return analysis;
+  }
+
+  // Analyze single dimension
+  analyzeDimension(message, dimension, history) {
+    const dimPatterns = this.patterns[dimension];
+    const results = {};
+
+    // Test each preference
+    Object.keys(dimPatterns).forEach(preference => {
+      results[preference] = this.testPatterns(message, dimPatterns[preference]);
+    });
+
+    // Determine winner
+    const scores = Object.entries(results);
+    scores.sort((a, b) => b[1].score - a[1].score);
+
+    if (scores[0][1].score > scores[1][1].score) {
+      return {
+        preference: scores[0][0],
+        confidence: this.calculateConfidence(scores[0][1], scores[1][1], message),
+        evidence: scores[0][1].matches
+      };
+    }
+
+    return { confidence: 0 };
+  }
+
+  // Test patterns for a preference
+  testPatterns(message, patterns) {
+    const result = {
+      score: 0,
+      matches: []
+    };
+
+    // Test behavioral patterns
+    patterns.behavioral?.forEach((pattern, index) => {
+      if (typeof pattern === 'function' ? pattern(message) : pattern.test(message)) {
+        result.score += 10;
+        result.matches.push(`behavioral_${index}`);
+      }
+    });
+
+    // Test linguistic patterns
+    patterns.linguistic?.forEach(phrase => {
+      if (message.toLowerCase().includes(phrase)) {
+        result.score += 8;
+        result.matches.push(`linguistic_${phrase}`);
+      }
+    });
+
+    // Test story patterns
+    patterns.storyPatterns?.forEach((pattern, index) => {
+      if (pattern(message)) {
+        result.score += 15;
+        result.matches.push(`story_${index}`);
+      }
+    });
+
+    return result;
+  }
+
+  // Calculate confidence with context
+  calculateConfidence(winnerResult, loserResult, message) {
+    let confidence = 0;
+
+    // Base confidence from score difference
+    const scoreDiff = winnerResult.score - loserResult.score;
+    confidence = Math.min(scoreDiff * 2, 30);
+
+    // Bonus for multiple evidence types
+    const evidenceTypes = new Set(winnerResult.matches.map(m => m.split('_')[0]));
+    if (evidenceTypes.size >= 2) confidence += 10;
+
+    // Bonus for message length and complexity
+    if (message.length > 100) confidence += 5;
+    if (message.length > 200) confidence += 10;
+
+    // Bonus for emotional content
+    if (/\b(really|very|definitely|absolutely|totally)\b/i.test(message)) {
+      confidence += 5;
+    }
+
+    // Bonus for personal stories
+    if (/\b(I remember|once I|when I|my experience)\b/i.test(message)) {
+      confidence += 10;
+    }
+
+    return Math.min(confidence, 50);
+  }
+
+  // Multi-message correlation
+  correlateWithHistory(analysis, history) {
+    const recentMessages = history.slice(-3);
+    
+    recentMessages.forEach(msg => {
+      Object.keys(analysis.dimensions).forEach(dim => {
+        const historicalResult = this.analyzeDimension(msg.content || msg, dim, []);
+        if (historicalResult.preference === analysis.dimensions[dim].preference) {
+          analysis.dimensions[dim].confidence += 5;
+          analysis.dimensions[dim].historicalConsistency = true;
+        }
+      });
+    });
+  }
+
+  // Helper methods
+  hasSequentialOrder(msg) {
+    return /\b(first|then|next|after that|finally)\b/i.test(msg);
+  }
+
+  hasConcreteDetails(msg) {
+    return /\b\d+\s*(minutes?|hours?|days?|years?|meters?|km|miles?)\b/i.test(msg);
+  }
+
+  hasMetaphorical(msg) {
+    return /\b(like|as if|reminds me of|similar to)\b/i.test(msg);
+  }
+
+  hasFutureOrientation(msg) {
+    return /\b(will|would|could|might|future|someday|eventually)\b/i.test(msg);
+  }
+
+  hasLogicalStructure(msg) {
+    return /\b(if.*then|because.*therefore|since.*thus)\b/i.test(msg);
+  }
+
+  considersPeopleImpact(msg) {
+    return /\b(how.*feel|affect.*people|impact.*on|hurt.*feelings)\b/i.test(msg);
+  }
 }
 
 // PHASE 2.2: Enhanced Conversation Flow Engine with Strategic Steering
@@ -1845,16 +2127,22 @@ class ConversationFlowEngine {
   // Enhanced question selection with MBTI strategic targeting
   getNextQuestion(intimacyLevel, userMood, conversationHistory = [], mbtiNeeds = null) {
     // Try to get MBTI-targeted scenario first
-    if (mbtiNeeds && this.shouldTargetMBTI(mbtiNeeds, conversationHistory)) {
-      const lastMessage = conversationHistory.length > 0 ? 
+    const targetCheck = mbtiNeeds ? this.shouldTargetMBTI(mbtiNeeds, conversationHistory) : false;
+    if (mbtiNeeds && targetCheck) {
+      const lastMessage = conversationHistory.length > 0 ?
         conversationHistory[conversationHistory.length - 1].user_message : '';
-      
-      const mbtiScenario = this.mbtiEngine.getTargetedScenario(
-        lastMessage || 'general conversation', 
-        mbtiNeeds, 
+
+      let mbtiScenario = targetCheck === 'passive_observation' ? 'passive_observation' : this.mbtiEngine.getTargetedScenario(
+        lastMessage || 'general conversation',
+        mbtiNeeds,
         intimacyLevel
       );
-      
+
+      if (mbtiScenario === 'passive_observation') {
+        // Don't ask MBTI questions, but keep analyzing responses
+        mbtiScenario = null;
+      }
+
       if (mbtiScenario) {
         // Adapt the template with current context
         return this.adaptScenarioToContext(mbtiScenario, lastMessage);
@@ -1881,9 +2169,10 @@ class ConversationFlowEngine {
   shouldTargetMBTI(mbtiNeeds, conversationHistory) {
     const { confidence_scores, dimensions_needed, resistance_count } = mbtiNeeds;
     
-    // Don't target if user has shown resistance
+    // ENHANCED: Adaptive resistance handling
     if (resistance_count && resistance_count >= 3) {
-      return false;
+      // Don't give up - switch to passive observation mode
+      return 'passive_observation';
     }
     
     // Target if we have dimensions that need work
@@ -2389,9 +2678,12 @@ class AriaPersonality {
     // Report generators
     this.reportGenerator = new PersonalInsightReport();
     this.matchGenerator = new MatchProfileGenerator();
-    
+
     // Compatibility engine
     this.compatibilityEngine = new CompatibilityEngine();
+
+    // Add this line in the constructor after other initializations
+    this.enhancedMBTIAnalyzer = new EnhancedMBTIAnalyzer();
   }
 
   // Generate warm, flirty introduction for new users
@@ -2558,7 +2850,21 @@ class AriaPersonality {
   }
 
   // MBTI Analysis with Emotional Intelligence Fusion
+  // MBTI Analysis with Emotional Intelligence Fusion - ENHANCED VERSION
   analyzeMBTIWithEmotionalFusion(message, userHistory = []) {
+    // Try enhanced analysis first
+    let enhancedResults = null;
+    try {
+      enhancedResults = this.enhancedMBTIAnalyzer.analyzeMessage(
+        message,
+        {},
+        userHistory
+      );
+    } catch (error) {
+      console.log('Enhanced MBTI analysis error, using fallback:', error.message);
+    }
+
+    // Original analysis (keep as fallback)
     const mbtiAnalysis = {
       emotional_patterns: this.analyzeEmotionalPatterns(message),
       cognitive_signals: this.detectCognitiveSignals(message),
@@ -2569,7 +2875,24 @@ class AriaPersonality {
 
     // Cross-validate with emotional patterns
     const fusedAnalysis = this.fuseMBTIWithEmotions(mbtiAnalysis, this.detectMood(message), this.detectEnergy(message));
-    
+
+    // Merge enhanced results if available
+    if (enhancedResults && enhancedResults.totalConfidence > 0) {
+      mbtiAnalysis.enhanced_detection = enhancedResults;
+
+      // Boost fusion confidence based on enhanced results
+      Object.entries(enhancedResults.dimensions).forEach(([dim, result]) => {
+        const prefKey = result.preference === 'extrovert' || result.preference === 'introvert' ?
+          result.preference :
+          result.preference.charAt(0).toLowerCase() + result.preference.slice(1);
+
+        if (!fusedAnalysis.enhanced_confidence) {
+          fusedAnalysis.enhanced_confidence = {};
+        }
+        fusedAnalysis.enhanced_confidence[prefKey] = result.confidence;
+      });
+    }
+
     return {
       ...mbtiAnalysis,
       fusion_results: fusedAnalysis
@@ -2968,6 +3291,14 @@ Then return to normal conversation.`;
 
     if (resistance_signals?.detected) {
       prompt += `\n\n🌸 GENTLE MODE: They seem hesitant. Be extra warm, share something vulnerable, make them comfortable.`;
+    }
+
+    // Add fallback for slow MBTI progress
+    if (conversationCount > 50 && !personalityData?.couple_compass_complete) {
+      const mbtiProgress = calculateMBTIProgress(personalityData?.mbti_confidence_scores || {});
+      if (mbtiProgress.average_confidence < 40) {
+        prompt += `\n\n💭 GENTLE SUGGESTION: They might benefit from a personality game. Consider offering: "I'd love to understand you better! Would you be up for a quick personality game? It's fun and I'll share what I discover about you! 😊"`;
+      }
     }
 
     if (celebration_opportunity) {
@@ -3563,8 +3894,42 @@ async function updateUserProfile(userId, newInsights) {
 
     // Update MBTI confidence scores if we have fusion analysis
     let updatedMBTI = { ...currentMBTI };
+
+    // ENHANCED: Check for enhanced detection results FIRST
+    if (newInsights.mbti_analysis?.enhanced_detection) {
+      const enhanced = newInsights.mbti_analysis.enhanced_detection;
+
+      Object.entries(enhanced.dimensions).forEach(([dimension, result]) => {
+        const currentScore = updatedMBTI[dimension] || 50;
+        let newScore = currentScore;
+
+        // Map preference to dimension score
+        if (dimension === 'E_I') {
+          newScore = result.preference === 'extrovert' ?
+            Math.min(100, currentScore + result.confidence) :
+            Math.max(0, currentScore - result.confidence);
+        } else if (dimension === 'S_N') {
+          newScore = result.preference === 'sensing' ?
+            Math.min(100, currentScore + result.confidence) :
+            Math.max(0, currentScore - result.confidence);
+        } else if (dimension === 'T_F') {
+          newScore = result.preference === 'thinking' ?
+            Math.min(100, currentScore + result.confidence) :
+            Math.max(0, currentScore - result.confidence);
+        } else if (dimension === 'J_P') {
+          newScore = result.preference === 'judging' ?
+            Math.min(100, currentScore + result.confidence) :
+            Math.max(0, currentScore - result.confidence);
+        }
+
+        updatedMBTI[dimension] = newScore;
+      });
+    }
+
+    // ORIGINAL: Keep existing fusion analysis as secondary boost
     if (newInsights.mbti_fusion && newInsights.mbti_fusion.enhanced_confidence) {
       Object.entries(newInsights.mbti_fusion.enhanced_confidence).forEach(([preference, boost]) => {
+        // Original fusion logic (kept as-is for compatibility)
         if (preference === 'extrovert') updatedMBTI.E_I = Math.min(100, (updatedMBTI.E_I || 50) + boost);
         if (preference === 'introvert') updatedMBTI.E_I = Math.max(0, (updatedMBTI.E_I || 50) - boost);
         if (preference === 'sensing') updatedMBTI.S_N = Math.min(100, (updatedMBTI.S_N || 50) + boost);
