@@ -185,9 +185,30 @@ function normalizePhoneNumber(phone) {
   }
   
   // Default to Indian format
-  const normalized = '+91' + cleaned;
-  console.log(`📱 Normalized (default): ${normalized}`);
-  return normalized;
+const normalized = '+91' + cleaned;
+console.log(`📱 Normalized (default): ${normalized}`);
+return normalized;
+}
+
+// Test users are phone numbers starting with +91000 followed by 10 digits
+function isTestUser(phoneNumber) {
+  const normalized = normalizePhoneNumber(phoneNumber);
+  return normalized && normalized.startsWith('+91000') && normalized.length === 15;
+}
+
+// Get count of real (non-test) numbers in the allowlist
+async function getRealUserCount() {
+  try {
+    const result = await pool.query(`
+      SELECT COUNT(*) FROM phone_allowlist
+      WHERE status = 'active'
+      AND phone_number NOT LIKE '+91000%'
+    `);
+    return parseInt(result.rows[0].count);
+  } catch (error) {
+    console.error('Error getting real user count:', error);
+    return 0;
+  }
 }
 
 // Check if phone number is in allowlist
@@ -377,52 +398,62 @@ app.post('/api/verify-phone', async (req, res) => {
 });
 
 // Admin: Add phone number to allowlist
+
 app.post('/api/admin/add-phone', async (req, res) => {
   try {
     const { phoneNumber, userName = '', userGender = '', notes = '', adminKey } = req.body;
-    
+
     // Simple admin protection
     if (adminKey !== 'soulsync_admin_2025') {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    
+
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
-    
-    // Check current allowlist count
-    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
-    const currentCount = parseInt(countResult.rows[0].count);
-    
-    if (currentCount >= 35) {
-      return res.status(400).json({ 
-        message: 'Allowlist is full (35/35). Remove a number first.' 
-      });
+    const isTest = isTestUser(normalizedPhone);
+
+    // Check current REAL user count (test users bypass limit)
+    if (!isTest) {
+      const realUserCount = await getRealUserCount();
+      if (realUserCount >= 100) {
+        return res.status(400).json({ 
+          message: 'Real user allowlist is full (100/100). Test users (+91000) can still be added.' 
+        });
+      }
     }
-    
+
     // Add to allowlist
     await pool.query(
-      `INSERT INTO phone_allowlist (phone_number, user_name, user_gender, notes, added_by) 
-       VALUES ($1, $2, $3, $4, $5) 
-       ON CONFLICT (phone_number) DO UPDATE SET 
-         status = 'active', 
-         user_name = $2, 
-         user_gender = $3, 
+      `INSERT INTO phone_allowlist (phone_number, user_name, user_gender, notes, added_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (phone_number) DO UPDATE SET
+         status = 'active',
+         user_name = $2,
+         user_gender = $3,
          notes = $4`,
       [normalizedPhone, userName, userGender, notes, 'admin']
     );
-    
+
+    const realCount = await getRealUserCount();
+    const testResult = await pool.query(`
+      SELECT COUNT(*) FROM phone_allowlist 
+      WHERE status = 'active' AND phone_number LIKE '+91000%'
+    `);
+    const testCount = parseInt(testResult.rows[0].count);
+
     res.json({ 
       success: true, 
       message: `Phone ${normalizedPhone} (${userName}) added to allowlist`,
-      currentCount: currentCount + 1,
-      remaining: 34 - currentCount
+      realUsers: realCount,
+      testUsers: testCount,
+      isTestUser: isTest,
+      remaining: isTest ? 'Unlimited' : (100 - realCount)
     });
-    
+
   } catch (error) {
     console.error('Add phone error:', error);
     res.status(500).json({ message: 'Failed to add phone number' });
   }
 });
-
 // Admin: Remove phone number from allowlist
 app.post('/api/admin/remove-phone', async (req, res) => {
   try {
@@ -447,7 +478,7 @@ app.post('/api/admin/remove-phone', async (req, res) => {
       success: true, 
       message: `Phone ${normalizedPhone} removed from allowlist`,
       currentCount: currentCount,
-      available: 35 - currentCount
+      available: 100 - currentCount
     });
     
   } catch (error) {
@@ -479,11 +510,11 @@ app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
     `);
     
     const totalCount = allowlistResult.rows.length;
-    const available = 35 - totalCount;
+    const available = 100 - totalCount;
     
     res.json({
       totalAllowed: totalCount,
-      maxCapacity: 35,
+      maxCapacity: 100,
       available: available,
       allowlist: allowlistResult.rows.map(row => ({
         phone: row.phone_number,
@@ -4881,11 +4912,11 @@ app.get('/api/test-db', async (req, res) => {
         tables_created: tablesResult.rows.map(row => row.table_name),
         allowlist_users: allowlistCount.rows[0].count,
         total_users: userCount.rows[0].count,
-        allowlist_capacity: '35 users max'
+        allowlist_capacity: '100 users max'
       },
       features: [
         'Complete user profiles with PRD structure',
-        'Phone number allowlist system (35 users max)',
+        'Phone number allowlist system (100 users max)',
         'Aria personality system (warm, flirty, caring)',
         'Couple Compass game implementation',
         'Personal insight report generation',
@@ -4927,7 +4958,7 @@ app.get('/api/health', async (req, res) => {
       database_connected: true,
       database_time: dbTest.rows[0].now,
       allowlist_users: allowlistCount.rows[0].count,
-      allowlist_capacity: '35 users max',
+      allowlist_capacity: '100 users max',
       
       implementation_phases: {
         'Phase 1': '✅ Aria Personality - Warm, flirty companion',
