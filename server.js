@@ -185,30 +185,9 @@ function normalizePhoneNumber(phone) {
   }
   
   // Default to Indian format
-const normalized = '+91' + cleaned;
-console.log(`📱 Normalized (default): ${normalized}`);
-return normalized;
-}
-
-// Test users are phone numbers starting with +91000 followed by 10 digits
-function isTestUser(phoneNumber) {
-  const normalized = normalizePhoneNumber(phoneNumber);
-  return normalized && normalized.startsWith('+91000') && normalized.length === 15;
-}
-
-// Get count of real (non-test) numbers in the allowlist
-async function getRealUserCount() {
-  try {
-    const result = await pool.query(`
-      SELECT COUNT(*) FROM phone_allowlist
-      WHERE status = 'active'
-      AND phone_number NOT LIKE '+91000%'
-    `);
-    return parseInt(result.rows[0].count);
-  } catch (error) {
-    console.error('Error getting real user count:', error);
-    return 0;
-  }
+  const normalized = '+91' + cleaned;
+  console.log(`📱 Normalized (default): ${normalized}`);
+  return normalized;
 }
 
 // Check if phone number is in allowlist
@@ -398,62 +377,52 @@ app.post('/api/verify-phone', async (req, res) => {
 });
 
 // Admin: Add phone number to allowlist
-
 app.post('/api/admin/add-phone', async (req, res) => {
   try {
     const { phoneNumber, userName = '', userGender = '', notes = '', adminKey } = req.body;
-
+    
     // Simple admin protection
     if (adminKey !== 'soulsync_admin_2025') {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-
+    
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
-    const isTest = isTestUser(normalizedPhone);
-
-    // Check current REAL user count (test users bypass limit)
-    if (!isTest) {
-      const realUserCount = await getRealUserCount();
-      if (realUserCount >= 100) {
-        return res.status(400).json({ 
-          message: 'Real user allowlist is full (100/100). Test users (+91000) can still be added.' 
-        });
-      }
+    
+    // Check current allowlist count
+    const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const currentCount = parseInt(countResult.rows[0].count);
+    
+    if (currentCount >= 35) {
+      return res.status(400).json({ 
+        message: 'Allowlist is full (35/35). Remove a number first.' 
+      });
     }
-
+    
     // Add to allowlist
     await pool.query(
-      `INSERT INTO phone_allowlist (phone_number, user_name, user_gender, notes, added_by)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (phone_number) DO UPDATE SET
-         status = 'active',
-         user_name = $2,
-         user_gender = $3,
+      `INSERT INTO phone_allowlist (phone_number, user_name, user_gender, notes, added_by) 
+       VALUES ($1, $2, $3, $4, $5) 
+       ON CONFLICT (phone_number) DO UPDATE SET 
+         status = 'active', 
+         user_name = $2, 
+         user_gender = $3, 
          notes = $4`,
       [normalizedPhone, userName, userGender, notes, 'admin']
     );
-
-    const realCount = await getRealUserCount();
-    const testResult = await pool.query(`
-      SELECT COUNT(*) FROM phone_allowlist 
-      WHERE status = 'active' AND phone_number LIKE '+91000%'
-    `);
-    const testCount = parseInt(testResult.rows[0].count);
-
+    
     res.json({ 
       success: true, 
       message: `Phone ${normalizedPhone} (${userName}) added to allowlist`,
-      realUsers: realCount,
-      testUsers: testCount,
-      isTestUser: isTest,
-      remaining: isTest ? 'Unlimited' : (100 - realCount)
+      currentCount: currentCount + 1,
+      remaining: 34 - currentCount
     });
-
+    
   } catch (error) {
     console.error('Add phone error:', error);
     res.status(500).json({ message: 'Failed to add phone number' });
   }
 });
+
 // Admin: Remove phone number from allowlist
 app.post('/api/admin/remove-phone', async (req, res) => {
   try {
@@ -478,7 +447,7 @@ app.post('/api/admin/remove-phone', async (req, res) => {
       success: true, 
       message: `Phone ${normalizedPhone} removed from allowlist`,
       currentCount: currentCount,
-      available: 100 - currentCount
+      available: 35 - currentCount
     });
     
   } catch (error) {
@@ -510,11 +479,11 @@ app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
     `);
     
     const totalCount = allowlistResult.rows.length;
-    const available = 100 - totalCount;
+    const available = 35 - totalCount;
     
     res.json({
       totalAllowed: totalCount,
-      maxCapacity: 100,
+      maxCapacity: 35,
       available: available,
       allowlist: allowlistResult.rows.map(row => ({
         phone: row.phone_number,
@@ -807,83 +776,15 @@ class CoupleCompass {
           'mismatch': "You know your non-negotiables. That's not rigid - that's self-aware.",
           'flexible': "Love makes you bendy! Just make sure you're bending, not breaking, for the right person."
         }
-      },
-      {
-        id: 'emotional_support',
-        text: "When you're feeling a little off, what kind of support from your partner makes you feel most seen and cared for? 💝",
-        conversational: "Let's talk about emotional support... When you're having a rough day or feeling off, what kind of support from your partner makes you feel most seen and cared for?",
-        options: [
-          { value: 'physical_comfort', text: 'Just being held or cuddled without needing to talk much', emoji: '🤗' },
-          { value: 'acts_of_service', text: 'When they quietly take something off my plate - like chores or errands', emoji: '🛠️' },
-          { value: 'words_reassurance', text: 'Them saying something soft and reassuring, like "You\'re not alone"', emoji: '💬' },
-          { value: 'quality_presence', text: 'I just want their full attention - no phones, no distractions', emoji: '⏰' }
-        ],
-        responses: {
-          'physical_comfort': "Physical comfort speaks to your heart. In tough moments, a warm embrace says more than words ever could.",
-          'acts_of_service': "You feel loved through actions. When someone steps in to lighten your load, that's pure love to you.",
-          'words_reassurance': "Words of reassurance are your emotional anchor. The right words at the right time can heal your whole world.",
-          'quality_presence': "Undivided attention is your sanctuary. When someone puts everything aside just for you, that's when you feel truly valued."
-        }
-      },
-      {
-        id: 'attachment_response',
-        text: "When someone pulls away or gets distant, what's the first thing that goes through your mind? 🤔",
-        conversational: "Here's something we don't always talk about... When someone you care about pulls away or gets distant, what's honestly the first thing that goes through your mind?",
-        options: [
-          { value: 'self_doubt', text: 'Did I do something wrong? I start second-guessing myself', emoji: '😕' },
-          { value: 'give_space', text: 'They probably just need space. I try not to take it personally', emoji: '🌸' },
-          { value: 'relief_space', text: 'Honestly? Space feels good. I need that too sometimes', emoji: '😌' },
-          { value: 'mixed_feelings', text: 'I feel confused - like I want to reach out, but also want to pull away', emoji: '🤷' }
-        ],
-        responses: {
-          'self_doubt': "You have an anxious heart that loves deeply. Your first instinct is to wonder if you've done something wrong - that caring nature is actually beautiful.",
-          'give_space': "You have such emotional wisdom. You understand that sometimes people need space, and that's not about you - that's secure love.",
-          'relief_space': "You value independence and understand that space can be healthy. You don't take others' need for distance as rejection.",
-          'mixed_feelings': "You feel the pull between connection and independence. That internal conflict shows you're learning to balance intimacy with autonomy."
-        }
-      },
-      {
-        id: 'giving_love',
-        text: "In a relationship, what does giving love look like for you, without even thinking? 💕",
-        conversational: "Let's explore how you naturally show love... In a relationship, what does giving love look like for you - like, the things you do without even thinking about it?",
-        options: [
-          { value: 'words_expression', text: 'I express it with words - compliments, encouragement, little check-ins', emoji: '💬' },
-          { value: 'helpful_actions', text: 'I do things - cook, fix, organize, whatever helps them', emoji: '🛠️' },
-          { value: 'quality_time', text: 'I want to be around them - watching shows, walks, just hanging out', emoji: '⏰' },
-          { value: 'physical_affection', text: "I'm pretty affectionate - hugs, kisses, casual touch throughout the day", emoji: '🤗' }
-        ],
-        responses: {
-          'words_expression': "Words are your love language! You naturally express care through encouragement, compliments, and those sweet little check-ins that make people feel seen.",
-          'helpful_actions': "You show love through service. Your instinct is to lighten someone's load - that's such a practical, caring way to love.",
-          'quality_time': "Your presence is your gift. You show love by simply being there, sharing moments, creating memories together.",
-          'physical_affection': "Touch is how you connect. You're naturally affectionate, and that physical closeness is how you express and feel love most deeply."
-        }
-      },
-      {
-        id: 'love_fears',
-        text: "What scares you most about love - the thing you don't always say out loud? 💭",
-        conversational: "This one's vulnerable, but important... What scares you most about love - like, the thing you don't always say out loud but sometimes worry about?",
-        options: [
-          { value: 'caring_more', text: "That I'll care more than they do, and they'll leave", emoji: '💔' },
-          { value: 'losing_self', text: "That I'll lose myself or feel suffocated", emoji: '🌊' },
-          { value: 'not_handled', text: "That I'll open up, and they won't handle it right", emoji: '🔒' },
-          { value: 'showing_up', text: "Honestly? I know love isn't perfect - I just want someone who shows up", emoji: '🤝' }
-        ],
-        responses: {
-          'caring_more': "Your fear of loving more deeply shows how much you have to give. That generous heart deserves someone who matches your emotional investment.",
-          'losing_self': "You value your independence and identity - that's actually really healthy. The right person will love who you are, not try to change you.",
-          'not_handled': "You want your vulnerability to be safe. That's not asking too much - it's asking for basic emotional safety and understanding.",
-          'showing_up': "You have such a mature view of love. You know it's not perfect, but you want someone reliable. That's the foundation of lasting love."
-        }
       }
     ];
 
     this.currentQuestionIndex = 0;
     this.responses = {};
 
-    // Verify we have exactly 10 questions
-    if (this.questions.length !== 10) {
-      console.error(`❌ CoupleCompass should have 10 questions but has ${this.questions.length}`);
+    // Verify we have exactly 6 questions
+    if (this.questions.length !== 6) {
+      console.error(`❌ CoupleCompass should have 6 questions but has ${this.questions.length}`);
     }
 
     // Log question IDs for verification
@@ -943,92 +844,44 @@ I'll ask a few questions about life, love, and everything in between. Just be re
     const living = this.responses.living_arrangement;
     const financial = this.responses.financial_style;
     const children = this.responses.children_vision;
+    
+    return `${userName}... I think Couple Compass just gave me a better map of your heart. 💕
 
-    // New psychological insights
-    const supportStyle = this.responses.emotional_support;
-    const attachmentPattern = this.responses.attachment_response;
-    const loveExpression = this.responses.giving_love;
-    const coreFear = this.responses.love_fears;
+You're someone who values ${this.getValueDescription(living, financial)}, and when it comes to building a life with someone, you need ${this.getNeedDescription(this.responses)}.
 
-    return `${userName}... I think Couple Compass just gave me a complete map of your heart. 💕
+What strikes me most? ${this.getInsight(this.responses)}
 
-**Your Life Vision**: ${this.getLifeVisionDescription(living, financial, children)}
-
-**How You Love**: ${this.getLoveStyleDescription(supportStyle, loveExpression)}
-
-**Your Emotional Pattern**: ${this.getEmotionalPatternDescription(attachmentPattern, coreFear)}
-
-What strikes me most? ${this.getDeepestInsight(this.responses)}
-
-I feel like I understand not just what you're looking for in love, but HOW you love and what makes you feel safe. Someone's going to be incredibly lucky to receive all this depth and care. 🌟`;
+I feel like I understand what you're looking for now - not just in love, but in life. And honestly? Someone's going to be very lucky to build that future with you. 🌟`;
   }
 
-  getLifeVisionDescription(living, financial, children) {
-    const visions = {
-      'with_parents': 'family-centered',
-      'near_parents': 'rooted but independent',
-      'new_city': 'adventure-seeking',
-      'flexible': 'love-led'
-    };
-
-    return `You envision a ${visions[living] || 'thoughtful'} life with ${this.getFinancialStyle(financial)} partnership and ${this.getChildrenVision(children)}.`;
-  }
-
-  getLoveStyleDescription(support, expression) {
-    const styles = {
-      'words_expression': 'You express love through words and receive comfort through reassurance',
-      'helpful_actions': 'You show love through service and appreciate when others lighten your load',
-      'quality_time': 'You give and receive love through focused presence and attention',
-      'physical_affection': 'You express love through touch and find comfort in physical closeness'
-    };
-
-    return styles[expression] || 'You have a unique way of giving and receiving love';
-  }
-
-  getEmotionalPatternDescription(attachment, fear) {
-    const patterns = {
-      'give_space': 'You have secure attachment patterns - you trust, communicate, and give space naturally',
-      'self_doubt': 'You love deeply and sometimes need extra reassurance - your caring heart is beautiful',
-      'relief_space': 'You value independence while learning to let others in - you protect your emotional space',
-      'mixed_feelings': 'You balance intimacy and independence thoughtfully - you\'re emotionally evolving'
-    };
-
-    return patterns[attachment] || 'You have a thoughtful approach to emotional connection';
-  }
-
-  getDeepestInsight(responses) {
-    // Create personalized insights based on combination of answers
-    if (responses.love_fears === 'showing_up' && responses.attachment_response === 'give_space') {
-      return "Your emotional maturity shows - you know love isn't perfect, you just want consistency.";
+  getValueDescription(living, financial) {
+    if (living === 'with_parents' || living === 'near_parents') {
+      return "family and roots";
+    } else if (financial === 'equal' || financial === 'emotional') {
+      return "partnership and balance";
+    } else {
+      return "independence and growth";
     }
-    if (responses.giving_love === 'helpful_actions' && responses.emotional_support === 'acts_of_service') {
-      return "You have such a service-oriented heart - both giving and receiving love through thoughtful actions.";
-    }
-    if (responses.attachment_response === 'self_doubt' && responses.love_fears === 'caring_more') {
-      return "Your capacity for deep love is remarkable - you just need someone who matches your emotional investment.";
-    }
-
-    return "You know yourself deeply and you're ready for someone who can appreciate all this emotional intelligence.";
   }
 
-  getFinancialStyle(style) {
-    const styles = {
-      'provider': 'traditional providing',
-      'lead_share': 'leading but collaborative',
-      'equal': 'equal partnership',
-      'emotional': 'emotionally-focused'
-    };
-    return styles[style] || 'balanced';
+  getNeedDescription(responses) {
+    if (responses.conflict_style === 'talk_out') {
+      return "open communication and emotional honesty";
+    } else if (responses.ambition_balance === 'family_first' || responses.ambition_balance === 'simple_life') {
+      return "peace and genuine connection over everything else";
+    } else {
+      return "someone who matches your energy and ambition";
+    }
   }
 
-  getChildrenVision(vision) {
-    const visions = {
-      'yes_involved': 'hands-on parenting dreams',
-      'yes_support': 'supported parenting plans',
-      'maybe': 'open future possibilities',
-      'no': 'child-free clarity'
-    };
-    return visions[vision] || 'thoughtful family planning';
+  getInsight(responses) {
+    if (responses.big_mismatch === 'flexible') {
+      return "Your flexibility in love shows incredible emotional maturity.";
+    } else if (responses.children_vision === 'yes_involved') {
+      return "Your readiness to be fully present as a parent shows your capacity for deep love.";
+    } else {
+      return "You know yourself well enough to know what you need. That self-awareness is rare.";
+    }
   }
 
   reset() {
@@ -2619,46 +2472,10 @@ function getCoupleCompassQuestionText(questionIndex) {
         "🚫 Might be a dealbreaker",
         "💕 Love makes me flexible"
       ]
-    },
-    {
-      text: "When you're feeling a little off, what kind of support from your partner makes you feel most seen and cared for? 💝",
-      options: [
-        "🤗 Just being held or cuddled without needing to talk much",
-        "🛠️ When they quietly take something off my plate - like chores or errands",
-        "💬 Them saying something soft and reassuring, like \"You're not alone\"",
-        "⏰ I just want their full attention - no phones, no distractions"
-      ]
-    },
-    {
-      text: "When someone pulls away or gets distant, what's the first thing that goes through your mind? 🤔",
-      options: [
-        "😕 Did I do something wrong? I start second-guessing myself",
-        "🌸 They probably just need space. I try not to take it personally",
-        "😌 Honestly? Space feels good. I need that too sometimes",
-        "🤷 I feel confused - like I want to reach out, but also want to pull away"
-      ]
-    },
-    {
-      text: "In a relationship, what does giving love look like for you, without even thinking? 💕",
-      options: [
-        "💬 I express it with words - compliments, encouragement, little check-ins",
-        "🛠️ I do things - cook, fix, organize, whatever helps them",
-        "⏰ I want to be around them - watching shows, walks, just hanging out",
-        "🤗 I'm pretty affectionate - hugs, kisses, casual touch throughout the day"
-      ]
-    },
-    {
-      text: "What scares you most about love - the thing you don't always say out loud? 💭",
-      options: [
-        "💔 That I'll care more than they do, and they'll leave",
-        "🌊 That I'll lose myself or feel suffocated",
-        "🔒 That I'll open up, and they won't handle it right",
-        "🤝 Honestly? I know love isn't perfect - I just want someone who shows up"
-      ]
     }
   ];
 
-  if (questionIndex >= 0 && questionIndex < questions.length) { // Now handles 10 questions instead of 6
+  if (questionIndex >= 0 && questionIndex < questions.length) {
     const q = questions[questionIndex];
     return `${q.text}
 
@@ -3425,10 +3242,10 @@ Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacy
       const exactQuestion = getCoupleCompassQuestionText(questionIndex);
 
       // CRITICAL: Check if we have a valid question
-      if (!exactQuestion || questionIndex >= 10) {
+      if (!exactQuestion || questionIndex >= 6) {
         // No more questions - game is complete
         prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
-The Couple Compass journey is complete! You've answered all 10 questions.
+The Couple Compass journey is complete! You've answered all 6 questions. 
 Based on their responses, share a warm synthesis about what you've learned about their relationship values and what kind of partner would be perfect for them.
 Then return to normal conversation - do NOT ask any more Couple Compass questions.`;
       } else {
@@ -3450,7 +3267,7 @@ CRITICAL RULES:
 - The reaction must ONLY reference their ANSWER choice, not ask new questions
 - Output EXACTLY the question text and options shown above
 - DO NOT modify the question wording AT ALL
- - This is question ${questionIndex + 1} of 10 ONLY`;
+- This is question ${questionIndex + 1} of 6 ONLY`;
       }
     } else if (gameState && gameState.justCompleted) {
       prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
@@ -3459,9 +3276,6 @@ Then return to normal conversation.`;
     }
 
     // === CONTEXTUAL GUIDANCE ===
-    // If missing Couple Compass: "Let's complete our 10-question compass journey first!"
-    // If low MBTI: "Let's chat a bit more, I'm still getting to know you"
-    // If few conversations: "Just {X} more conversations until your report!"
     // Handle different conversation states
     if (off_topic?.detected) {
       prompt += `\n\n🎯 REDIRECT: They asked an off-topic question. Playfully redirect: "Babe, I'm better with hearts than homework! What's really on your mind?"`;
@@ -3511,8 +3325,7 @@ Then return to normal conversation.`;
   // Assess if ready for report generation
   assessReportReadiness(mbtiData, conversationCount) {
     const mbtiComplete = this.assessMBTICompleteness(mbtiData.mbti_confidence_scores || {});
-    const coupleCompassComplete = mbtiData.couple_compass_complete ||
-      (mbtiData.couple_compass_data && Object.keys(mbtiData.couple_compass_data).length >= 10);
+    const coupleCompassComplete = mbtiData.couple_compass_complete || false;
     
     return {
       ready: mbtiComplete.ready && coupleCompassComplete,
@@ -4169,36 +3982,6 @@ async function updateUserProfile(userId, newInsights) {
         ...newInsights.couple_compass_response,
         completed_at: newInsights.couple_compass_complete ? new Date().toISOString() : null
       };
-
-      // Extract psychological insights from new questions
-      const psychInsights = {};
-
-      if (newInsights.couple_compass_response.giving_love) {
-        const loveLanguageMap = {
-          'words_expression': 'words_of_affirmation',
-          'helpful_actions': 'acts_of_service',
-          'quality_time': 'quality_time',
-          'physical_affection': 'physical_touch'
-        };
-        psychInsights.primary_love_language = loveLanguageMap[newInsights.couple_compass_response.giving_love];
-      }
-
-      if (newInsights.couple_compass_response.attachment_response) {
-        const attachmentMap = {
-          'give_space': 'secure',
-          'self_doubt': 'anxious',
-          'relief_space': 'avoidant',
-          'mixed_feelings': 'fearful_avoidant'
-        };
-        psychInsights.attachment_style = attachmentMap[newInsights.couple_compass_response.attachment_response];
-      }
-
-      updatedData.psychological_insights = {
-        ...currentData.psychological_insights,
-        ...psychInsights,
-        discovered_via: 'couple_compass_explicit',
-        confidence: 95
-      };
     }
     
     await pool.query(
@@ -4445,7 +4228,7 @@ app.post('/api/chat', async (req, res) => {
       console.log('💬 Latest message:', latestUserMessage.content.substring(0, 50) + '...');
       console.log('🎭 Aria Personality:', 'Warm, Flirty, Caring');
       console.log('💕 Response Style:', '2-3 sentences, personal sharing');
-      console.log('🧭 Couple Compass:', analysis.couple_compass_ready ? 'READY' : coupleCompassState?.active ? `ACTIVE (${coupleCompassState.questionIndex + 1}/10)` : 'Building Trust');
+      console.log('🧭 Couple Compass:', analysis.couple_compass_ready ? 'READY' : coupleCompassState?.active ? 'ACTIVE' : 'Building Trust');
       console.log('📊 MBTI Progress:', Object.values(user.personality_data?.mbti_confidence_scores || {}).map(s => Math.round(s) + '%').join(', '));
       console.log('📝 Report Ready:', analysis.ready_for_report?.ready || false);
       console.log('=======================================');
@@ -4577,12 +4360,6 @@ app.post('/api/chat', async (req, res) => {
       const data = await response.json();
       
       // Generate report if ready
-      // Automatic Trigger Conditions:
-      // ALL must be true:
-      // - MBTI average confidence ≥ 60%
-      // - Couple Compass complete (10/10 questions)
-      // - Total conversations ≥ 15
-      // - Profile completeness ≥ 70%
       let reportGenerated = false;
       if (analysis.ready_for_report?.ready && !user.report_generated) {
         const report = aria.reportGenerator.generateReport(
@@ -4735,8 +4512,6 @@ function generateUserInsights(analysis, updatedProfile, user, conversationCount)
     profileCompleteness: calculateEnhancedProfileCompleteness(updatedProfile.personalityData),
     mbtiProgress: calculateMBTIProgress(updatedProfile.personalityData.mbti_confidence_scores || {}),
     readyForMatching: assessMatchingReadiness(updatedProfile.personalityData),
-    coupleCompassComplete: updatedProfile.personalityData.couple_compass_complete ||
-      (updatedProfile.coupleCompassData && Object.keys(updatedProfile.coupleCompassData).length >= 10),
     
     // System quality
     conversationQuality: {
@@ -4875,8 +4650,7 @@ app.get('/api/user-insights/:userId', async (req, res) => {
       mbtiProgress: calculateMBTIProgress(userData.personality_data?.mbti_confidence_scores || {}),
       mbtiType: determineMBTIType(userData.personality_data?.mbti_confidence_scores || {}),
       readyForMatching: assessMatchingReadiness(userData.personality_data || {}),
-      coupleCompassComplete: userData.personality_data?.couple_compass_complete ||
-        (userData.couple_compass_data && Object.keys(userData.couple_compass_data).length >= 10),
+      coupleCompassComplete: userData.personality_data?.couple_compass_complete || false,
       loveLanguages: userData.personality_data?.love_language_hints || [],
       attachmentStyle: getPrimaryAttachment(userData.personality_data?.attachment_hints || []),
       
@@ -4911,7 +4685,7 @@ function calculateEnhancedProfileCompleteness(personalityData) {
     // Phase 2: MBTI framework (30% weight)
     mbti: ['mbti_confidence_scores'],
     
-    // Phase 3: Couple Compass (30% weight) - 10 questions total
+    // Phase 3: Couple Compass (30% weight)
     couple_compass: ['couple_compass_complete'],
     
     // Phase 4: Advanced psychology (20% weight)
@@ -4939,9 +4713,7 @@ function calculateEnhancedProfileCompleteness(personalityData) {
       const avgConfidence = Object.values(mbtiScores).reduce((sum, score) => sum + score, 0) / 4;
       phaseScore = Math.min(avgConfidence / 100, 1);
     } else if (phase === 'couple_compass') {
-      const compassComplete = personalityData.couple_compass_complete ||
-        (personalityData.couple_compass_data && Object.keys(personalityData.couple_compass_data).length >= 10);
-      phaseScore = compassComplete ? 1 : 0;
+      phaseScore = personalityData.couple_compass_complete ? 1 : 0;
     } else {
       const phaseFields = fields.filter(field => {
         const data = personalityData[field];
@@ -5049,10 +4821,8 @@ function assessMatchingReadiness(personalityData) {
   const avgMBTI = Object.values(mbtiScores).reduce((sum, score) => sum + score, 0) / 4;
   criteria.mbti_completion = Math.round(avgMBTI);
   
-  // Couple Compass completion (30% weight) - 10/10 questions
-  const compassComplete = personalityData.couple_compass_complete ||
-    (personalityData.couple_compass_data && Object.keys(personalityData.couple_compass_data).length >= 10);
-  criteria.couple_compass_completion = compassComplete ? 100 : 0;
+  // Couple Compass completion (30% weight)
+  criteria.couple_compass_completion = personalityData.couple_compass_complete ? 100 : 0;
   
   // Love language clarity (15% weight)
   const loveLanguages = personalityData.love_language_hints || [];
@@ -5111,14 +4881,13 @@ app.get('/api/test-db', async (req, res) => {
         tables_created: tablesResult.rows.map(row => row.table_name),
         allowlist_users: allowlistCount.rows[0].count,
         total_users: userCount.rows[0].count,
-        allowlist_capacity: '100 users max'
+        allowlist_capacity: '35 users max'
       },
       features: [
         'Complete user profiles with PRD structure',
-        'Phone number allowlist system (100 users max)',
+        'Phone number allowlist system (35 users max)',
         'Aria personality system (warm, flirty, caring)',
-        'Enhanced Couple Compass (10 comprehensive questions)',
-        'Love language & attachment style detection',
+        'Couple Compass game implementation',
         'Personal insight report generation',
         'Basic matchmaking engine',
         'Cross-session memory with personality tracking'
@@ -5158,7 +4927,7 @@ app.get('/api/health', async (req, res) => {
       database_connected: true,
       database_time: dbTest.rows[0].now,
       allowlist_users: allowlistCount.rows[0].count,
-      allowlist_capacity: '100 users max',
+      allowlist_capacity: '35 users max',
       
       implementation_phases: {
         'Phase 1': '✅ Aria Personality - Warm, flirty companion',
@@ -5185,11 +4954,7 @@ app.get('/api/health', async (req, res) => {
         'Parenting vision alignment',
         'Conflict resolution preferences',
         'Career vs life balance',
-        'Love language detection',
-        'Attachment style analysis',
-        'Emotional support patterns',
-        'Relationship fears exploration',
-        'Comprehensive synthesis with psychological insights'
+        'Synthesis and insights'
       ],
       
       ai_capabilities: {
