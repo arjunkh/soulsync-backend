@@ -1202,6 +1202,32 @@ class CompatibilityEngine {
         'lead_share': ['equal', 'provider'],
         'equal': ['lead_share', 'emotional'],
         'emotional': ['equal', 'provider']
+      },
+      // ADD THESE NEW COMPATIBILITY RULES:
+      children_vision: {
+        'yes_involved': ['yes_support'], // Both want kids, different involvement levels OK
+        'yes_support': ['yes_involved'],
+        'maybe': ['maybe'], // Both uncertain can explore together
+        // NOTE: No compatibility between yes and no (will be 30% default)
+      },
+      conflict_style: {
+        'talk_out': ['need_space'], // Talk person OK with space person if they eventually talk
+        'need_space': ['talk_out', 'mediator'],
+        'mediator': ['need_space', 'talk_out'],
+        // NOTE: 'avoid' has no compatible matches (intentionally)
+      },
+      ambition_balance: {
+        'high_ambition': ['balanced'], // Adjacent levels are compatible
+        'balanced': ['high_ambition', 'family_first'],
+        'family_first': ['balanced', 'simple_life'],
+        'simple_life': ['family_first'],
+        // NOTE: Extreme opposites (high_ambition + simple_life) not compatible
+      },
+      big_mismatch: {
+        'discuss': ['flexible', 'unsure'], // Communication and flexibility work together
+        'flexible': ['discuss', 'unsure'],
+        'unsure': ['discuss', 'flexible'],
+        // NOTE: 'mismatch' (rigid) has no compatible options
       }
     };
 
