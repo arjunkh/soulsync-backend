@@ -1133,7 +1133,104 @@ Aria 💕`;
 
 // PHASE 4: Basic Compatibility Engine
 class CompatibilityEngine {
+  constructor() {
+    // Dealbreaker definitions
+    this.absoluteDealbreakers = [
+      {
+        name: 'children_opposite',
+        check: (c1, c2) => {
+          const wantsKids = ['yes_involved', 'yes_support'];
+          const noKids = ['no'];
+          return (
+            (wantsKids.includes(c1.children_vision) && noKids.includes(c2.children_vision)) ||
+            (noKids.includes(c1.children_vision) && wantsKids.includes(c2.children_vision))
+          );
+        },
+        message: 'Fundamental disagreement on having children'
+      },
+      {
+        name: 'both_avoid_conflict',
+        check: (c1, c2) => c1.conflict_style === 'avoid' && c2.conflict_style === 'avoid',
+        message: 'Both avoid conflict - relationship cannot resolve issues'
+      },
+      {
+        name: 'extreme_living',
+        check: (c1, c2) => {
+          return (
+            (c1.living_arrangement === 'with_parents' && c2.living_arrangement === 'new_city') ||
+            (c1.living_arrangement === 'new_city' && c2.living_arrangement === 'with_parents')
+          );
+        },
+        message: 'Incompatible lifestyle preferences'
+      }
+    ];
+
+    this.redFlags = [
+      {
+        name: 'extreme_ambition_mismatch',
+        check: (c1, c2) => {
+          return (
+            (c1.ambition_balance === 'high_ambition' && c2.ambition_balance === 'simple_life') ||
+            (c1.ambition_balance === 'simple_life' && c2.ambition_balance === 'high_ambition')
+          );
+        },
+        maxScore: 20,
+        message: 'Major lifestyle and ambition mismatch'
+      }
+    ];
+  }
+
+  // ADD THIS NEW METHOD:
+  checkDealbreakers(compass1, compass2) {
+    // Check absolute dealbreakers
+    for (const dealbreaker of this.absoluteDealbreakers) {
+      if (dealbreaker.check(compass1, compass2)) {
+        return {
+          hasDealbreaker: true,
+          score: 0,
+          reason: dealbreaker.message,
+          type: 'absolute'
+        };
+      }
+    }
+
+    // Check red flags
+    for (const flag of this.redFlags) {
+      if (flag.check(compass1, compass2)) {
+        return {
+          hasRedFlag: true,
+          maxScore: flag.maxScore,
+          reason: flag.message,
+          type: 'red'
+        };
+      }
+    }
+
+    return { hasDealbreaker: false, hasRedFlag: false };
+  }
+
   calculateCompatibility(user1Data, user2Data) {
+    // Check for dealbreakers first
+    const dealbreakCheck = this.checkDealbreakers(
+      user1Data.couple_compass || {},
+      user2Data.couple_compass || {}
+    );
+
+    if (dealbreakCheck.hasDealbreaker) {
+      return {
+        overallScore: 0,
+        dimensionScores: {
+          mbti: 0,
+          values: 0,
+          emotional: 0,
+          lifestyle: 0,
+          growth: 0
+        },
+        topReasons: [dealbreakCheck.reason],
+        recommendation: 'Not Compatible - ' + dealbreakCheck.reason
+      };
+    }
+
     const scores = {
       mbti: this.calculateMBTICompatibility(user1Data.mbti_type, user2Data.mbti_type),
       values: this.calculateValueAlignment(user1Data.couple_compass, user2Data.couple_compass),
@@ -1143,13 +1240,20 @@ class CompatibilityEngine {
     };
 
     const overallScore = this.calculateOverallScore(scores);
+
+    // ADD THIS: Apply red flag cap if needed
+    let finalScore = overallScore;
+    if (dealbreakCheck.hasRedFlag) {
+      finalScore = Math.min(overallScore, dealbreakCheck.maxScore);
+    }
+
     const reasons = this.generateCompatibilityReasons(scores, user1Data, user2Data);
 
     return {
-      overallScore,
+      overallScore: finalScore,
       dimensionScores: scores,
-      topReasons: reasons,
-      recommendation: this.getRecommendation(overallScore)
+      topReasons: dealbreakCheck.hasRedFlag ? [dealbreakCheck.reason, ...reasons] : reasons,
+      recommendation: this.getRecommendation(finalScore)
     };
   }
 
@@ -1321,6 +1425,8 @@ class CompatibilityEngine {
   }
 
   getRecommendation(score) {
+    if (score === 0) return "Not Compatible - Fundamental Differences";
+    if (score < 20) return "Not Recommended - Major Incompatibilities";
     if (score >= 85) return "Exceptional Match - Rare and Beautiful";
     if (score >= 75) return "Strong Match - High Potential";
     if (score >= 65) return "Good Match - Worth Exploring";
@@ -4042,18 +4148,29 @@ async function savePersonalReport(userId, report) {
 // Find potential matches
 async function findPotentialMatches(userId, userProfile, limit = 5) {
   try {
-    // Get users of opposite gender with complete profiles
     const oppositeGender = userProfile.user_gender === 'Male' ? 'Female' : 'Male';
-    
+
+    // ADD: Extract user's children preference
+    const userChildrenPref = userProfile.couple_compass_data?.children_vision;
+
     const result = await pool.query(`
       SELECT * FROM users 
       WHERE user_id != $1 
       AND user_gender = $2 
       AND profile_completeness > 70
       AND couple_compass_data != '{}'
+      -- ADD THIS SECTION: Pre-filter obvious dealbreakers
+      AND NOT (
+        -- Children mismatch filter
+        (couple_compass_data->>'children_vision' IN ('yes_involved', 'yes_support') 
+         AND $3 = 'no') 
+        OR
+        (couple_compass_data->>'children_vision' = 'no' 
+         AND $3 IN ('yes_involved', 'yes_support'))
+      )
       ORDER BY profile_completeness DESC
-      LIMIT $3
-    `, [userId, oppositeGender, limit]);
+      LIMIT $4
+    `, [userId, oppositeGender, userChildrenPref, limit]);
     
     return result.rows;
   } catch (error) {
