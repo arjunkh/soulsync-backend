@@ -970,7 +970,7 @@ class PersonalInsightReport {
     const attachment = this.getAttachmentStyle(personalityData.attachment_hints || []);
     
     return {
-      title: `${user_name}'s Personal Insight Report`,
+      title: `${user_name}'s Story`,
       sections: {
         introduction: this.generateIntroduction(user_name, user_gender),
         personalityProfile: this.generatePersonalityProfile(mbtiType, personalityData),
@@ -3699,6 +3699,10 @@ Then return to normal conversation.`;
       prompt += `\n\n🎉 CELEBRATE: They just shared something meaningful! React with genuine excitement: "Wait, that's amazing!" or "I love that about you!"`;
     }
 
+    if (userAnalysis.ready_for_report?.ready && !user.report_generated) {
+      prompt += `\n\n📝 YOUR STORY READY: Share excitement! "Something beautiful just happened... Your Story is ready! I've been writing about all the amazing things I've discovered about you. Check the Your Story tab when you're ready 💕"`;
+    }
+
     // Core personality reminder
     prompt += `\n\n✨ REMEMBER: You're their flirty best friend who REMEMBERS EVERYTHING about them. Reference past discoveries naturally. Make them feel seen, understood, and a little bit special.`;
 
@@ -4794,7 +4798,7 @@ app.post('/api/chat', async (req, res) => {
         );
         await savePersonalReport(userId, report);
         reportGenerated = true;
-        console.log(`📄 Generated personal insight report for ${user.user_name}`);
+        console.log(`📝 Generated Your Story for ${user.user_name}`);
       }
       
       // Enhanced conversation summary
@@ -4842,8 +4846,11 @@ app.post('/api/chat', async (req, res) => {
         userInsights: {
           ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
           reportGenerated,
+          reportAvailable: user.report_generated || reportGenerated,
+          yourStoryReady: user.report_generated || reportGenerated,
+          yourStoryNew: reportGenerated && !user.report_generated,
           coupleCompassResult: analysis.couple_compass_result,
-          coupleCompassGameState: gameState || coupleCompassState // ALWAYS include current game state
+          coupleCompassGameState: gameState || coupleCompassState
         }
       });
 
@@ -4950,28 +4957,60 @@ function generateUserInsights(analysis, updatedProfile, user, conversationCount)
   };
 }
 
-// Get user report endpoint
+// Get user's story (personal report) - Enhanced with metadata
 app.get('/api/user-report/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
+    // Get user details for the story
+    const userResult = await pool.query(
+      'SELECT user_name, user_gender, age, created_at FROM users WHERE user_id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get the report/story
     const result = await pool.query(
       'SELECT * FROM personal_reports WHERE user_id = $1 ORDER BY generated_at DESC LIMIT 1',
       [userId]
     );
-    
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'No report found for user' });
+      return res.status(404).json({ error: 'Your Story is not ready yet. Keep chatting with Aria!' });
     }
-    
-    res.json({
-      report: result.rows[0].report_content,
-      generatedAt: result.rows[0].generated_at
+
+    // Format the story sections for better display
+    const reportContent = result.rows[0].report_content;
+    const formattedSections = {};
+
+    // Ensure all sections exist and format them
+    Object.keys(reportContent.sections).forEach(key => {
+      formattedSections[key] = reportContent.sections[key]
+        .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove markdown bold
+        .trim();
     });
-    
+
+    res.json({
+      story: {
+        title: `${userResult.rows[0].user_name}'s Story`,
+        sections: formattedSections,
+        metadata: {
+          generatedAt: result.rows[0].generated_at,
+          userName: userResult.rows[0].user_name,
+          userGender: userResult.rows[0].user_gender,
+          userAge: userResult.rows[0].age,
+          memberSince: userResult.rows[0].created_at
+        }
+      },
+      storyId: result.rows[0].id
+    });
+
   } catch (error) {
-    console.error('Error getting user report:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error getting user story:', error);
+    res.status(500).json({ error: 'Unable to load Your Story right now' });
   }
 });
 
@@ -5072,6 +5111,8 @@ app.get('/api/user-insights/:userId', async (req, res) => {
       recentTopics: conversations.slice(-3).map(conv => conv.session_summary),
       profileCompleteness: calculateEnhancedProfileCompleteness(userData.personality_data),
       reportGenerated: userData.report_generated,
+      yourStoryAvailable: userData.report_generated || false,
+      yourStoryGeneratedAt: userData.report_generated ? userData.created_at : null,
       
       // PRD-specific insights
       mbtiProgress: calculateMBTIProgress(userData.personality_data?.mbti_confidence_scores || {}),
