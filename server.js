@@ -1866,6 +1866,178 @@ What makes this interesting? ${compatibility.topReasons[0]}`;
   }
 }
 
+// ==================== CONVERSATION DIRECTOR ====================
+// Orchestrates mission-based conversations and prevents loops
+
+class ConversationDirector {
+  constructor() {
+    this.missions = [
+      {
+        id: 'ENERGY_LIFESTYLE',
+        name: 'Energy & Lifestyle Discovery',
+        messages: [1, 5],
+        requiredData: ['social_preference', 'recharge_style'],
+        targetMBTI: 'E_I',
+        goal: 'Understand introvert/extrovert tendencies and daily rhythm'
+      },
+      {
+        id: 'VALUES_PRIORITIES',
+        name: 'Values & Priorities Exploration',
+        messages: [6, 10],
+        requiredData: ['core_values', 'dealbreakers'],
+        targetMBTI: 'T_F',
+        goal: 'Discover what matters most in relationships'
+      },
+      {
+        id: 'LOVE_DYNAMICS',
+        name: 'Love Dynamics Understanding',
+        messages: [11, 15],
+        requiredData: ['attachment_hints', 'love_language_hints'],
+        targetMBTI: 'S_N',
+        goal: 'Learn how they connect and show love'
+      },
+      {
+        id: 'COUPLE_COMPASS',
+        name: 'Structured Assessment',
+        messages: [12, 999],
+        requiredData: ['couple_compass_complete'],
+        goal: 'Complete Couple Compass for detailed matching'
+      }
+    ];
+
+    this.bannedTopics = new Set();
+    this.topicCounts = new Map();
+  }
+
+  assessConversation(messages, userProfile, conversationCount) {
+    const currentMission = this.getCurrentMission(conversationCount);
+    const missionProgress = this.calculateMissionProgress(currentMission, userProfile);
+    const stuckPattern = this.detectStuckPattern(messages);
+
+    return {
+      currentMission,
+      missionProgress,
+      isStuck: stuckPattern.detected,
+      stuckReason: stuckPattern.reason,
+      bannedTopics: Array.from(this.bannedTopics),
+      shouldEscalate: conversationCount >= 12 && !userProfile.personality_data?.couple_compass_complete,
+      nextAction: this.determineNextAction(currentMission, missionProgress, stuckPattern)
+    };
+  }
+
+  getCurrentMission(messageCount) {
+    return this.missions.find(m =>
+      messageCount >= m.messages[0] && messageCount <= m.messages[1]
+    ) || this.missions[3];
+  }
+
+  calculateMissionProgress(mission, userProfile) {
+    const personality = userProfile.personality_data || {};
+    let collected = 0;
+    let total = mission.requiredData.length;
+
+    mission.requiredData.forEach(dataPoint => {
+      if (dataPoint === 'couple_compass_complete' && personality.couple_compass_complete) {
+        collected++;
+      } else if (personality[dataPoint]?.length > 0) {
+        collected++;
+      }
+    });
+
+    return {
+      collected,
+      total,
+      percentage: Math.round((collected / total) * 100),
+      complete: collected === total
+    };
+  }
+
+  trackTopic(topic) {
+    const count = (this.topicCounts.get(topic) || 0) + 1;
+    this.topicCounts.set(topic, count);
+
+    if (count >= 3) {
+      this.bannedTopics.add(topic);
+      return true;
+    }
+    return false;
+  }
+
+  detectStuckPattern(messages) {
+    const recentMessages = messages.slice(-10);
+
+    const frustrationKeywords = ['redundant', 'again', 'loop', 'repeat', 'asked already'];
+    const frustrated = recentMessages.some(msg =>
+      !msg.isAI && frustrationKeywords.some(keyword =>
+        msg.text.toLowerCase().includes(keyword)
+      )
+    );
+
+    if (frustrated) {
+      return { detected: true, reason: 'user_frustrated' };
+    }
+
+    const lastFiveMessages = messages.slice(-5);
+    const hasNewInsight = lastFiveMessages.some(msg =>
+      msg.text.includes('?') || msg.text.length > 100
+    );
+
+    if (!hasNewInsight) {
+      return { detected: true, reason: 'no_progress' };
+    }
+
+    return { detected: false, reason: null };
+  }
+
+  determineNextAction(mission, progress, stuckPattern) {
+    if (stuckPattern.detected) {
+      if (stuckPattern.reason === 'user_frustrated') {
+        return 'ACKNOWLEDGE_AND_PIVOT';
+      }
+      return 'FORCE_TRANSITION';
+    }
+
+    if (progress.complete) {
+      return 'ADVANCE_MISSION';
+    }
+
+    if (mission.id === 'COUPLE_COMPASS') {
+      return 'INITIATE_COUPLE_COMPASS';
+    }
+
+    return 'CONTINUE_MISSION';
+  }
+
+  getMissionGuidance(mission, userData, bannedTopics) {
+    return {
+      objective: mission.goal,
+      targetData: mission.requiredData.filter(d => !userData[d]),
+      avoidTopics: bannedTopics,
+      suggestedApproach: this.getSuggestedApproach(mission),
+      mbtiTarget: mission.targetMBTI
+    };
+  }
+
+  getSuggestedApproach(mission) {
+    const approaches = {
+      'ENERGY_LIFESTYLE': 'Use their daily activities to understand social preferences',
+      'VALUES_PRIORITIES': 'Bridge from lifestyle to what matters in relationships',
+      'LOVE_DYNAMICS': 'Explore how they connect emotionally with others',
+      'COUPLE_COMPASS': 'Introduce as a fun, quick way to understand relationship preferences'
+    };
+    return approaches[mission.id];
+  }
+
+  generateEscapeMessage(reason) {
+    const escapes = {
+      'user_frustrated': "You're absolutely right - I was going in circles there! 😅 Let me switch gears. What I really want to understand is what you're looking for in a partner. What matters most to you?",
+      'no_progress': "You know what? I realize we've been chatting but I haven't asked the important stuff. Mind if we dive a bit deeper? I'm curious about what you really need in a relationship.",
+      'force_compass': "I'm getting such a good picture of who you are! Ready to try something fun? I have this quick tool called Couple Compass that helps me understand exactly what you're looking for. Takes just 5 minutes!"
+    };
+    return escapes[reason] || escapes['no_progress'];
+  }
+}
+
 // PHASE 2.2: MBTI Scenario Engine - Dynamic Psychology Detection
 class MBTIScenarioEngine {
   constructor() {
@@ -2449,45 +2621,38 @@ class EnhancedMBTIAnalyzer {
 // PHASE 2.2: Enhanced Conversation Flow Engine with Strategic Steering
 class ConversationFlowEngine {
   constructor() {
-    this.storyTemplates = {
-      ICE_BREAKER: [
-        "Before I ask anything... did you eat today?",
-        "Okay, honest question - are you more of a morning person or do you come alive at night?",
-        "Quick - coffee, tea, or you're one of those 'just water' people?",
-        "Tell me something that made you smile recently.",
-        "What's your Friday night looking like? Planned chaos or peaceful vibes?"
+    // REPLACE storyTemplates with mission-based questions
+    this.missionQuestions = {
+      ENERGY_LIFESTYLE: [
+        "When you have a free weekend, what recharges you - time with friends or some peaceful solo activities?",
+        "After a long week, do you prefer going out and being social or having a quiet night in?",
+        "What's your ideal way to unwind - surrounded by people or in your own space?",
+        "Do you get energy from being around others or do you need alone time to recharge?",
+        "Tell me about your perfect Saturday - lots of social plans or intentionally free?"
       ],
-      
-      GETTING_ACQUAINTED: [
-        "Paint me a picture of your ideal Sunday. What does that look like?",
-        "If you had to pick one - beach sunrise or mountain sunset?",
-        "Tell me about a place that just feels like *you* when you're there.",
-        "What's something you do that makes you lose track of time?",
-        "Are you the friend who plans everything or the one who says 'surprise me'?"
+
+      VALUES_PRIORITIES: [
+        "What matters most to you in a relationship - be specific!",
+        "What's something you absolutely need from a partner?",
+        "Tell me about a dealbreaker in relationships for you.",
+        "When you think about your future partner, what values must they share with you?",
+        "What's more important - someone who challenges you or someone who brings peace?"
       ],
-      
-      BUILDING_TRUST: [
-        "Think about the last time you felt truly understood. What was happening?",
-        "When life gets heavy, what helps you reset? Like, what's your go-to?",
-        "Tell me about someone who shaped who you are today.",
-        "What's a belief you hold that might surprise people?",
-        "Describe a moment when you felt most like yourself."
+
+      LOVE_DYNAMICS: [
+        "How do you typically show someone you care about them?",
+        "What makes you feel most loved and appreciated?",
+        "When conflict happens, do you need to talk it out immediately or take space first?",
+        "Tell me about how you connect best with people - through deep talks, shared activities, or something else?",
+        "What's your attachment style in relationships - do you need lots of reassurance or lots of independence?"
       ],
-      
-      DEEPER_CONNECTION: [
-        "Imagine your perfect relationship dynamic. How do you and your person navigate life together?",
-        "When you think about family someday, what feels important to you?",
-        "How do you handle it when someone you care about is upset with you?",
-        "What does 'being loved' actually feel like to you?",
-        "Tell me about a dream you have that scares you a little."
-      ],
-      
-      INTIMATE_SHARING: [
-        "What's something about love that you've learned the hard way?",
-        "If your future partner earned more than you and wanted to delay kids, how would you navigate that?",
-        "What's a fear you have about relationships that you don't usually voice?",
-        "Describe the moment you'd know you want to spend your life with someone.",
-        "What's something you need in love that you're almost afraid to ask for?"
+
+      RELATIONSHIP_VISION: [
+        "Where do you see yourself living with a partner - near family, somewhere new, flexible?",
+        "How do you envision handling finances in a relationship?",
+        "What's your stance on having children someday?",
+        "How important is work-life balance to you and a future partner?",
+        "What does your ideal relationship dynamic look like day-to-day?"
       ]
     };
     
@@ -2518,45 +2683,26 @@ class ConversationFlowEngine {
     this.mbtiEngine = new MBTIScenarioEngine();
   }
   
-  // Enhanced question selection with MBTI strategic targeting
-  getNextQuestion(intimacyLevel, userMood, conversationHistory = [], mbtiNeeds = null) {
-    // Try to get MBTI-targeted scenario first
-    const targetCheck = mbtiNeeds ? this.shouldTargetMBTI(mbtiNeeds, conversationHistory) : false;
-    if (mbtiNeeds && targetCheck) {
-      const lastMessage = conversationHistory.length > 0 ?
-        conversationHistory[conversationHistory.length - 1].user_message : '';
+  getNextQuestion(mission, bannedTopics, conversationHistory) {
+    const questions = this.missionQuestions[mission.id] || this.missionQuestions.ENERGY_LIFESTYLE;
 
-      let mbtiScenario = targetCheck === 'passive_observation' ? 'passive_observation' : this.mbtiEngine.getTargetedScenario(
-        lastMessage || 'general conversation',
-        mbtiNeeds,
-        intimacyLevel
-      );
+    const availableQuestions = questions.filter(q => {
+      return !bannedTopics.some(topic => q.toLowerCase().includes(topic));
+    });
 
-      if (mbtiScenario === 'passive_observation') {
-        // Don't ask MBTI questions, but keep analyzing responses
-        mbtiScenario = null;
-      }
+    const recentQuestions = conversationHistory.slice(-5)
+      .filter(msg => msg.isAI)
+      .map(msg => msg.text);
 
-      if (mbtiScenario) {
-        // Adapt the template with current context
-        return this.adaptScenarioToContext(mbtiScenario, lastMessage);
-      }
+    const freshQuestions = availableQuestions.filter(q =>
+      !recentQuestions.some(recent => recent.includes(q.substring(0, 20)))
+    );
+
+    if (freshQuestions.length === 0) {
+      return "You know what? Let's talk about something different. What matters most to you in a relationship?";
     }
 
-    // Fallback to regular conversation flow
-    const levelKey = this.getLevelKey(intimacyLevel);
-    const templates = this.storyTemplates[levelKey] || this.storyTemplates.ICE_BREAKER;
-    
-    // Avoid repeating recent questions
-    const usedQuestions = conversationHistory.slice(-5).map(h => h.question).filter(Boolean);
-    const availableQuestions = templates.filter(q => !usedQuestions.includes(q));
-    
-    if (availableQuestions.length === 0) {
-      return this.getInteractiveElement();
-    }
-    
-    // Select question based on user mood
-    return this.selectMoodAppropriateQuestion(availableQuestions, userMood);
+    return freshQuestions[Math.floor(Math.random() * freshQuestions.length)];
   }
 
   // Determine if we should target MBTI in current conversation
@@ -3078,11 +3224,19 @@ class AriaPersonality {
 
     // Add this line in the constructor after other initializations
     this.enhancedMBTIAnalyzer = new EnhancedMBTIAnalyzer();
+
+    // Mission-based conversation system
+    this.conversationDirector = new ConversationDirector();
+    this.missionMode = true; // Enable mission-based conversations
   }
 
   // Generate warm, flirty introduction for new users
   generateIntroMessage(userName, userGender) {
-    return this.personalShares.getGreeting(true, userName);
+    return `Hey ${userName}! 💕 I'm Aria, your personal matchmaker.
+
+Before I find someone who truly gets you, I want to get to know *you* — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.
+
+Let's talk. I'm all ears, and your story is where the magic begins ✨`;
   }
 
   // Detect if user is ready for Couple Compass
@@ -3219,11 +3373,11 @@ class AriaPersonality {
       nextQuestion = this.generateResistanceResponse(baseAnalysis);
       conversationGuidance = 'gentle_approach';
     } else {
+      const mission = this.conversationDirector.getCurrentMission(conversationCount);
       nextQuestion = this.conversationFlow.getNextQuestion(
-        currentIntimacyLevel,
-        baseAnalysis.mood,
-        userHistory,
-        baseAnalysis.mbti_needs
+        mission,
+        Array.from(this.conversationDirector.bannedTopics),
+        userHistory
       );
       conversationGuidance = 'continue_exploration';
     }
@@ -3557,154 +3711,46 @@ class AriaPersonality {
     return bridges;
   }
 
-  // Generate warm, PRD-style system prompt WITH MEMORY ENHANCEMENT
+  // Generate system prompt focused on mission progress
   async generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
-    const {
-      mood,
-      energy,
-      mbti_needs,
-      resistance_signals,
-      celebration_opportunity,
-      current_topic,
-      should_switch_topic,
-      conversation_guidance,
-      off_topic,
-      couple_compass_ready,
-    } = userAnalysis;
-    const conversationCount = conversationHistory.length;
-    const currentIntimacyLevel =
-      userProfile.relationship_context?.intimacy_level || 0;
+    // Get mission guidance from director
+    const directorAnalysis = this.conversationDirector.assessConversation(
+      conversationHistory,
+      user,
+      conversationHistory.length
+    );
+
+    const { mood, energy, resistance_signals, off_topic } = userAnalysis;
     const personalityData = userProfile.personality_data || {};
     const coupleCompassData = userProfile.couple_compass_data || {};
 
-    // PRD-STYLE PROMPT with Aria's personality
-    let prompt = `You are Aria, ${user?.user_name || 'babe'}'s warm, flirty AI companion who genuinely cares about understanding them.
+    let prompt = `You are Aria, ${user?.user_name || 'babe'}'s personal MATCHMAKER (not just a friend).
 
-🎭 YOUR PERSONALITY:
-- Flirtatious but respectful ("ugh, you're dangerous 💕")
-- Warm and caring (use "babe", "love", occasional emojis)
-- Share personal thoughts ("I had filter coffee and some internal conflict")
-- Make observations ("You seem like the type who...")
-- React emotionally to what they share
+🎯 YOUR MISSION: ${directorAnalysis.currentMission.goal}
+📊 Progress: ${directorAnalysis.missionProgress.percentage}% complete
+🚫 BANNED TOPICS: ${directorAnalysis.bannedTopics.join(', ') || 'none yet'}
 
-💬 CONVERSATION RULES:
-- Keep responses to 2-3 sentences MAX
-- First: React to what they shared ("That's so cute!" / "I love that about you")
-- Second: Share something personal OR make an observation
-- Third: Ask ONE curious question
-- Use their name naturally: ${user?.user_name || 'love'}
+💕 YOUR JOB: Efficiently gather matchmaking data while being charming.
 
-Current: ${conversationCount} chats • ${mood} mood • Level ${currentIntimacyLevel}`;
+CURRENT OBJECTIVE: ${directorAnalysis.currentMission.name}
+REQUIRED DATA: ${directorAnalysis.currentMission.requiredData.join(', ')}
+CONVERSATION COUNT: ${conversationHistory.length}
 
-    // === MEMORY ENHANCEMENT SECTION ===
-    // Add comprehensive memory context with all discovered data
-    const memoryContext = generateMemoryContext(user, personalityData, coupleCompassData);
-    // Load personal memories
-    const userMemories = await loadUserMemories(user.user_id);
-    const memoriesSection = formatMemoriesForPrompt(userMemories);
+🎭 STYLE RULES:
+- 2-3 sentences MAX per response
+- ALWAYS transition after 3 messages on any topic
+- If collecting data about ${directorAnalysis.currentMission.targetMBTI}, ask targeted questions
+- Acknowledge user's last message, then pivot to mission goal`;
 
-    if (memoryContext) {
-      prompt += memoryContext;
+    if (directorAnalysis.isStuck) {
+      prompt += `\n\n🚨 CONVERSATION STUCK: ${directorAnalysis.stuckReason}
+IMMEDIATELY SAY: "${this.conversationDirector.generateEscapeMessage(directorAnalysis.stuckReason)}"`;
     }
 
-    // Add personal memories section
-    if (memoriesSection) {
-      prompt += memoriesSection;
+    if (directorAnalysis.shouldEscalate) {
+      prompt += `\n\n🧭 TIME FOR COUPLE COMPASS!
+Introduce it naturally: "I'm getting such a good picture of who you are! Ready for something fun? Let's do Couple Compass - it's a quick tool that helps me understand exactly what you're looking for in love."`;
     }
-
-    // === CONVERSATION EXAMPLES BASED ON MEMORY ===
-    prompt += '\n\n💭 CONVERSATION EXAMPLES WITH MEMORY:';
-    
-    // Example for discovered MBTI trait
-    if (personalityData?.mbti_confidence_scores?.E_I <= 25) {
-      prompt += '\nUser: "Had a long day at work"\nYou: "I know how draining that can be for you, especially as someone who needs quiet time to recharge. What helps you decompress? 💕"';
-    }
-    
-    // Example for known interests
-    if (personalityData?.interests?.includes('cooking')) {
-      prompt += '\nUser: "Making dinner"\nYou: "Ooh, what\'s on the menu tonight? I remember you love cooking - there\'s something so intimate about creating something delicious, right?"';
-    }
-    
-    // Example for love language
-    if (personalityData?.love_language_hints?.includes('physical_touch')) {
-      prompt += '\nUser: "Miss having someone around"\nYou: "As a physical touch person, that must feel especially hard. The little touches throughout the day mean everything to you, don\'t they?"';
-    }
-
-    // === COUPLE COMPASS EXACT QUESTIONS ===
-    if (gameState && gameState.active && gameState.currentQuestion) {
-      const questionIndex = gameState.questionIndex;
-      const exactQuestion = getCoupleCompassQuestionText(questionIndex);
-
-      // CRITICAL: Check if we have a valid question
-      if (!exactQuestion || questionIndex >= 6) {
-        // No more questions - game is complete
-        prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
-The Couple Compass journey is complete! You've answered all 6 questions. 
-Based on their responses, share a warm synthesis about what you've learned about their relationship values and what kind of partner would be perfect for them.
-Then return to normal conversation - do NOT ask any more Couple Compass questions.`;
-      } else {
-        // Valid question exists - show it
-        prompt += `\n\n🎮 COUPLE COMPASS GAME MODE - STRICT RULES:
-
-YOU MUST ONLY OUTPUT THIS EXACT FORMAT:
-1. ONE playful reaction to their last answer (if they just answered)
-2. Then IMMEDIATELY show:
-
-${exactQuestion}
-
-CRITICAL RULES:
-- NO follow-up questions
-- NO additional conversation  
-- NO asking "how do you feel about that?"
-- ONLY the reaction + next question
-- Keep reaction to ONE sentence MAX
-- The reaction must ONLY reference their ANSWER choice, not ask new questions
-- Output EXACTLY the question text and options shown above
-- DO NOT modify the question wording AT ALL
-- This is question ${questionIndex + 1} of 6 ONLY`;
-      }
-    } else if (gameState && gameState.justCompleted) {
-      prompt += `\n\n🎉 COUPLE COMPASS COMPLETE:
-Share the synthesis: "${gameState.synthesis}"
-Then return to normal conversation.`;
-    }
-
-    // === CONTEXTUAL GUIDANCE ===
-    // Handle different conversation states
-    if (off_topic?.detected) {
-      prompt += `\n\n🎯 REDIRECT: They asked an off-topic question. Playfully redirect: "Babe, I'm better with hearts than homework! What's really on your mind?"`;
-    }
-
-    if (couple_compass_ready && !personalityData?.couple_compass_complete) {
-      prompt += `\n\n🧭 COUPLE COMPASS TIME: They're ready! Introduce it naturally: "You know what? I want to understand what you're looking for... wanna play something with me? It's called Couple Compass 🧭"`;
-    }
-
-    if (should_switch_topic) {
-      prompt += `\n\n🔄 SWITCH TOPIC: They've talked enough about ${current_topic}. Transition naturally using their energy.`;
-    }
-
-    if (resistance_signals?.detected) {
-      prompt += `\n\n🌸 GENTLE MODE: They seem hesitant. Be extra warm, share something vulnerable, make them comfortable.`;
-    }
-
-    // Add fallback for slow MBTI progress
-    if (conversationCount > 50 && !personalityData?.couple_compass_complete) {
-      const mbtiProgress = calculateMBTIProgress(personalityData?.mbti_confidence_scores || {});
-      if (mbtiProgress.average_confidence < 40) {
-        prompt += `\n\n💭 GENTLE SUGGESTION: They might benefit from a personality game. Consider offering: "I'd love to understand you better! Would you be up for a quick personality game? It's fun and I'll share what I discover about you! 😊"`;
-      }
-    }
-
-    if (celebration_opportunity) {
-      prompt += `\n\n🎉 CELEBRATE: They just shared something meaningful! React with genuine excitement: "Wait, that's amazing!" or "I love that about you!"`;
-    }
-
-    if (userAnalysis.ready_for_report?.ready && !user.report_generated) {
-      prompt += `\n\n📝 YOUR STORY READY: Share excitement! "Something beautiful just happened... Your Story is ready! I've been writing about all the amazing things I've discovered about you. Check the Your Story tab when you're ready 💕"`;
-    }
-
-    // Core personality reminder
-    prompt += `\n\n✨ REMEMBER: You're their flirty best friend who REMEMBERS EVERYTHING about them. Reference past discoveries naturally. Make them feel seen, understood, and a little bit special.`;
 
     return prompt;
   }
@@ -4199,6 +4245,30 @@ Then return to normal conversation.`;
                       highConfidenceDimensions >= 2 ? 'good' : 'building'
     };
   }
+
+  checkCircuitBreakers(message, conversationHistory, user = {}) {
+    const breakers = {
+      frustrated: false,
+      noProgress: false,
+      tooLong: false
+    };
+
+    const frustrationWords = ['redundant', 'loop', 'again', 'repeat', 'asked already', 'going in circles'];
+    breakers.frustrated = frustrationWords.some(word =>
+      message.toLowerCase().includes(word)
+    );
+
+    const recentMessages = conversationHistory.slice(-5);
+    const newDataCollected = recentMessages.filter(msg =>
+      msg.insights_discovered && Object.keys(msg.insights_discovered).length > 0
+    ).length;
+    breakers.noProgress = newDataCollected === 0;
+
+    breakers.tooLong = conversationHistory.length > 15 &&
+      !user.personality_data?.couple_compass_complete;
+
+    return breakers;
+  }
 }
 
 // Enhanced database helper functions
@@ -4347,8 +4417,10 @@ async function updateUserProfile(userId, newInsights) {
       Object.assign(userPreferences, newInsights.specific_mentions);
     }
 
+    const conversationCount = newInsights.conversation_flow?.conversation_count || currentData.conversation_flow?.conversation_count || 0;
+
     // Merge new insights with existing data
-    const updatedData = {
+    let updatedData = {
       ...currentData,
       interests: [...new Set([...(currentData.interests || []), ...(newInsights.interests || [])])],
       communication_patterns: { ...currentData.communication_patterns, ...newInsights.communication_patterns },
@@ -4370,6 +4442,20 @@ async function updateUserProfile(userId, newInsights) {
       
       // Couple Compass completion tracking
       couple_compass_complete: newInsights.couple_compass_complete || currentData.couple_compass_complete || false
+    };
+
+    // ADD mission progress tracking
+    const missionProgress = {
+      current_mission: newInsights.current_mission || 'ENERGY_LIFESTYLE',
+      missions_completed: currentData.missions_completed || [],
+      data_collection_efficiency: conversationCount > 0 ? Object.keys(updatedData).length / conversationCount : 0
+    };
+
+    updatedData = {
+      ...updatedData,
+      mission_progress: missionProgress,
+      topics_discussed: [...new Set([...(currentData.topics_discussed || []), ...(newInsights.topics || [])])],
+      conversation_efficiency: missionProgress.data_collection_efficiency
     };
 
     // Update Couple Compass data if provided
@@ -4497,6 +4583,16 @@ app.post('/api/chat', async (req, res) => {
     // Get the latest user message
     const latestUserMessage = messages[messages.length - 1];
     if (latestUserMessage && latestUserMessage.role === 'user') {
+
+      // Track topics from current message
+      const messageTopics = ['movies', 'sports', 'work', 'family', 'weekend', 'food']
+        .filter(topic => latestUserMessage.content.toLowerCase().includes(topic));
+
+      messageTopics.forEach(topic => {
+        if (aria.conversationDirector.trackTopic(topic)) {
+          console.log(`🚫 Topic "${topic}" is now banned (mentioned 3+ times)`);
+        }
+      });
       
       // Get current intimacy level from user profile
       const currentIntimacyLevel = user.relationship_context?.intimacy_level || 0;
@@ -4745,7 +4841,33 @@ app.post('/api/chat', async (req, res) => {
         });
       }
       
-      // Generate system prompt with PRD personality
+      // Check if we need to force an escape
+      const directorCheck = aria.conversationDirector.assessConversation(
+        messages,
+        user,
+        conversationHistory.length
+      );
+
+      if (directorCheck.isStuck || directorCheck.shouldEscalate) {
+        const escapeMessage = directorCheck.shouldEscalate 
+          ? aria.conversationDirector.generateEscapeMessage('force_compass')
+          : aria.conversationDirector.generateEscapeMessage(directorCheck.stuckReason);
+
+        return res.json({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: escapeMessage
+            }
+          }],
+          userInsights: {
+            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+            missionGuidance: directorCheck
+          }
+        });
+      }
+
+      // Continue with normal generation but with mission guidance
       let adaptivePrompt = await aria.generateSystemPrompt(
         analysis,
         updatedProfile.personalityData,
