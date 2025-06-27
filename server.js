@@ -1967,20 +1967,25 @@ class ConversationDirector {
     const recentMessages = messages.slice(-10);
 
     const frustrationKeywords = ['redundant', 'again', 'loop', 'repeat', 'asked already'];
-    const frustrated = recentMessages.some(msg =>
-      !msg.isAI && frustrationKeywords.some(keyword =>
-        msg.text.toLowerCase().includes(keyword)
-      )
-    );
+    const frustrated = recentMessages.some(msg => {
+      // Handle both formats: OpenAI format and internal format
+      const messageText = msg.content || msg.text || '';
+      const isUserMessage = msg.role === 'user' || !msg.isAI;
+
+      return isUserMessage && frustrationKeywords.some(keyword =>
+        messageText.toLowerCase().includes(keyword)
+      );
+    });
 
     if (frustrated) {
       return { detected: true, reason: 'user_frustrated' };
     }
 
     const lastFiveMessages = messages.slice(-5);
-    const hasNewInsight = lastFiveMessages.some(msg =>
-      msg.text.includes('?') || msg.text.length > 100
-    );
+    const hasNewInsight = lastFiveMessages.some(msg => {
+      const messageText = msg.content || msg.text || '';
+      return messageText.includes('?') || messageText.length > 100;
+    });
 
     if (!hasNewInsight) {
       return { detected: true, reason: 'no_progress' };
@@ -4843,7 +4848,7 @@ app.post('/api/chat', async (req, res) => {
       
       // Check if we need to force an escape
       const directorCheck = aria.conversationDirector.assessConversation(
-        messages,
+        conversationHistory,  // Use conversationHistory instead of messages
         user,
         conversationHistory.length
       );
