@@ -1320,7 +1320,12 @@ class CompatibilityEngine {
     const scores = {
       mbti: this.calculateMBTICompatibility(user1Data.mbti_type, user2Data.mbti_type),
       values: this.calculateValueAlignment(user1Data.couple_compass, user2Data.couple_compass),
-      emotional: this.calculateEmotionalFit(user1Data.attachment_style, user2Data.attachment_style),
+      emotional: this.calculateEmotionalFit(
+        user1Data.attachment_style,
+        user2Data.attachment_style,
+        user1Data.love_languages || [],
+        user2Data.love_languages || []
+      ),
       lifestyle: this.calculateLifestyleMatch(user1Data, user2Data),
       growth: this.calculateGrowthPotential(user1Data, user2Data),
       lifeStage: this.calculateLifeStageCompatibility(user1Data, user2Data)
@@ -1425,7 +1430,8 @@ class CompatibilityEngine {
     return compatibilityMap[key]?.[value1]?.includes(value2) || false;
   }
 
-  calculateEmotionalFit(attachment1, attachment2) {
+  calculateEmotionalFit(attachment1, attachment2, loveLang1 = [], loveLang2 = []) {
+    // Original attachment scoring remains unchanged
     const attachmentScores = {
       'secure_secure': 90,
       'secure_anxious': 75,
@@ -1436,7 +1442,28 @@ class CompatibilityEngine {
     };
 
     const key = [attachment1, attachment2].sort().join('_');
-    return attachmentScores[key] || 65;
+    const attachmentScore = attachmentScores[key] || 65;
+
+    // NEW: Love language compatibility scoring
+    let loveLanguageScore = 50; // Base score if no data
+
+    if (loveLang1.length > 0 && loveLang2.length > 0) {
+      // Find shared love languages
+      const sharedLanguages = loveLang1.filter(lang => loveLang2.includes(lang));
+
+      if (sharedLanguages.length >= 2) {
+        loveLanguageScore = 100; // Multiple shared languages
+      } else if (sharedLanguages.length === 1) {
+        loveLanguageScore = 85; // One shared language
+      } else {
+        loveLanguageScore = 60; // No shared languages (not a dealbreaker)
+      }
+    }
+
+    // Weighted combination: 60% attachment, 40% love language
+    const combinedScore = (attachmentScore * 0.6) + (loveLanguageScore * 0.4);
+
+    return Math.round(combinedScore);
   }
 
   calculateLifestyleMatch(user1, user2) {
@@ -1511,6 +1538,23 @@ class CompatibilityEngine {
 
     if (scores.emotional > 75) {
       reasons.push("Your emotional styles complement each other perfectly");
+    }
+
+    // Love language specific reason
+    if (scores.emotional > 80 && user1.love_languages && user2.love_languages) {
+      const sharedLangs = user1.love_languages.filter(l => user2.love_languages.includes(l));
+      if (sharedLangs.length >= 2) {
+        reasons.push("You both speak the same love languages - deep understanding guaranteed");
+      } else if (sharedLangs.length === 1) {
+        const langMap = {
+          'quality_time': 'quality time together',
+          'physical_touch': 'physical affection',
+          'words_of_affirmation': 'verbal appreciation',
+          'acts_of_service': 'thoughtful actions',
+          'gifts': 'meaningful surprises'
+        };
+        reasons.push(`You both value ${langMap[sharedLangs[0]] || sharedLangs[0]} in relationships`);
+      }
     }
 
     if (scores.mbti > 70) {
@@ -4958,14 +5002,16 @@ app.get('/api/user-matches/:userId', async (req, res) => {
           couple_compass: user.couple_compass_data,
           attachment_style: getPrimaryAttachment(user.personality_data.attachment_hints || []),
           interests: user.personality_data.interests || [],
-          communication_style: user.personality_data.communication_patterns?.style
+          communication_style: user.personality_data.communication_patterns?.style,
+          love_languages: user.personality_data.love_language_hints || []
         },
         {
           mbti_type: determineMBTIType(match.personality_data.mbti_confidence_scores || {}).partial_type,
           couple_compass: match.couple_compass_data,
           attachment_style: getPrimaryAttachment(match.personality_data.attachment_hints || []),
           interests: match.personality_data.interests || [],
-          communication_style: match.personality_data.communication_patterns?.style
+          communication_style: match.personality_data.communication_patterns?.style,
+          love_languages: match.personality_data.love_language_hints || []
         }
       );
       
@@ -5110,6 +5156,47 @@ app.get('/api/admin/check-life-stage-setup/:adminKey', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Test love language compatibility
+app.get('/api/test-love-language-match', async (req, res) => {
+  const testCases = [
+    {
+      name: "Partial Match",
+      user1: { attachment: 'secure', languages: ['quality_time', 'physical_touch'] },
+      user2: { attachment: 'secure', languages: ['quality_time', 'words_of_affirmation'] }
+    },
+    {
+      name: "No Match",
+      user1: { attachment: 'secure', languages: ['acts_of_service'] },
+      user2: { attachment: 'anxious', languages: ['gifts', 'words_of_affirmation'] }
+    },
+    {
+      name: "Perfect Match",
+      user1: { attachment: 'secure', languages: ['quality_time', 'physical_touch'] },
+      user2: { attachment: 'secure', languages: ['quality_time', 'physical_touch'] }
+    }
+  ];
+
+  const engine = new CompatibilityEngine();
+  const results = testCases.map(test => ({
+    scenario: test.name,
+    emotionalScore: engine.calculateEmotionalFit(
+      test.user1.attachment,
+      test.user2.attachment,
+      test.user1.languages,
+      test.user2.languages
+    ),
+    breakdown: {
+      attachment: `${test.user1.attachment} + ${test.user2.attachment}`,
+      sharedLanguages: test.user1.languages.filter(l => test.user2.languages.includes(l))
+    }
+  }));
+
+  res.json({
+    testResults: results,
+    explanation: "Emotional score = 60% attachment + 40% love language compatibility"
+  });
 });
 
 // Helper function to get primary attachment style
