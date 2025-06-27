@@ -138,12 +138,78 @@ async function initializeDatabase() {
 
     // Add initial admin numbers
     await pool.query(`
-      INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status) 
-      VALUES 
+      INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status)
+      VALUES
         ('+919876543210', 'Admin User', 'Male', 'system', 'App creator - primary admin', 'active'),
         ('+911234567890', 'Test User', 'Female', 'system', 'Test number for development', 'active')
       ON CONFLICT (phone_number) DO NOTHING
     `);
+
+    // Life Stage Feature - Database Setup
+    console.log('🔄 Setting up Life Stage columns...');
+
+    // Add life_stage column
+    try {
+      await pool.query(`
+        ALTER TABLE users 
+        ADD COLUMN life_stage VARCHAR(20)
+      `);
+      console.log('✅ Created life_stage column');
+    } catch (err) {
+      if (err.message.includes('already exists')) {
+        console.log('✅ life_stage column already exists');
+      } else {
+        console.error('❌ Error adding life_stage column:', err.message);
+      }
+    }
+
+    // Add life_stage_flexibility column
+    try {
+      await pool.query(`
+        ALTER TABLE users 
+        ADD COLUMN life_stage_flexibility VARCHAR(20) DEFAULT 'adjacent'
+      `);
+      console.log('✅ Created life_stage_flexibility column');
+    } catch (err) {
+      if (err.message.includes('already exists')) {
+        console.log('✅ life_stage_flexibility column already exists');
+      } else {
+        console.error('❌ Error adding life_stage_flexibility column:', err.message);
+      }
+    }
+
+    // Create index for better performance
+    try {
+      await pool.query(`
+        CREATE INDEX idx_users_life_stage ON users(life_stage)
+      `);
+      console.log('✅ Created life_stage index');
+    } catch (err) {
+      if (err.message.includes('already exists')) {
+        console.log('✅ life_stage index already exists');
+      } else {
+        console.error('❌ Error creating index:', err.message);
+      }
+    }
+
+    // Auto-populate life stages for existing users
+    try {
+      const updateResult = await pool.query(`
+        UPDATE users 
+        SET life_stage = 
+          CASE 
+            WHEN age >= 20 AND age <= 27 THEN 'early_career'
+            WHEN age >= 28 AND age <= 35 THEN 'establishing'
+            WHEN age >= 36 AND age <= 45 THEN 'established'
+            WHEN age > 45 THEN 'mature'
+            ELSE life_stage
+          END
+        WHERE age IS NOT NULL AND life_stage IS NULL
+      `);
+      console.log(`✅ Updated ${updateResult.rowCount} existing users with life stages`);
+    } catch (err) {
+      console.error('❌ Error updating existing users:', err.message);
+    }
 
     console.log('✅ Database tables initialized successfully with complete schema');
   } catch (error) {
@@ -255,16 +321,20 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender, userA
     let result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [normalizedPhone]);
     
     if (result.rows.length === 0) {
-      // Create new user with complete profile
+      // Calculate life stage for new user
+      const lifeStage = LifeStageManager.getLifeStage(userAge);
+
+      // Create new user with complete profile including life stage
       result = await pool.query(
-        `INSERT INTO users (user_id, phone_number, user_name, user_gender, age, personality_data, relationship_context, couple_compass_data, total_conversations) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        `INSERT INTO users (user_id, phone_number, user_name, user_gender, age, life_stage, personality_data, relationship_context, couple_compass_data, total_conversations)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
         [
           userId,
           normalizedPhone,
           userName,
           userGender,
           userAge,
+          lifeStage,
           { name: userName, gender: userGender, age: userAge },
           { current_depth: 'new', topics_covered: [], comfort_level: 'getting_acquainted', intimacy_level: 0 },
           {},
@@ -280,9 +350,10 @@ async function getOrCreateUserWithPhone(phoneNumber, userName, userGender, userA
           last_seen = CURRENT_TIMESTAMP,
           user_name = COALESCE($2, user_name),
           user_gender = COALESCE($3, user_gender),
-          age = COALESCE($4, age)
+          age = COALESCE($4, age),
+          life_stage = COALESCE($5, life_stage)
         WHERE phone_number = $1`,
-        [normalizedPhone, userName, userGender, userAge]
+        [normalizedPhone, userName, userGender, userAge, LifeStageManager.getLifeStage(userAge)]
       );
       result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [normalizedPhone]);
       console.log(`✅ Updated existing user: ${result.rows[0].user_id}`);
@@ -1162,6 +1233,21 @@ class CompatibilityEngine {
           );
         },
         message: 'Incompatible lifestyle preferences'
+      },
+      {
+        name: 'life_stage_incompatible',
+        check: (c1, c2) => {
+          const flexibility1 = LifeStageManager.shouldExpandFlexibility(c1, c2);
+          const flexibility2 = LifeStageManager.shouldExpandFlexibility(c2, c1);
+          const score = LifeStageManager.calculateLifeStageScore(
+            c1.life_stage,
+            c2.life_stage,
+            flexibility1,
+            flexibility2
+          );
+          return score === 0;
+        },
+        message: 'Life stages too different for compatibility'
       }
     ];
 
@@ -1236,7 +1322,8 @@ class CompatibilityEngine {
       values: this.calculateValueAlignment(user1Data.couple_compass, user2Data.couple_compass),
       emotional: this.calculateEmotionalFit(user1Data.attachment_style, user2Data.attachment_style),
       lifestyle: this.calculateLifestyleMatch(user1Data, user2Data),
-      growth: this.calculateGrowthPotential(user1Data, user2Data)
+      growth: this.calculateGrowthPotential(user1Data, user2Data),
+      lifeStage: this.calculateLifeStageCompatibility(user1Data, user2Data)
     };
 
     const overallScore = this.calculateOverallScore(scores);
@@ -1385,13 +1472,26 @@ class CompatibilityEngine {
     return Math.min(growthScore, 100);
   }
 
+  calculateLifeStageCompatibility(user1, user2) {
+    const flexibility1 = LifeStageManager.shouldExpandFlexibility(user1, user2);
+    const flexibility2 = LifeStageManager.shouldExpandFlexibility(user2, user1);
+
+    return LifeStageManager.calculateLifeStageScore(
+      user1.life_stage,
+      user2.life_stage,
+      flexibility1,
+      flexibility2
+    );
+  }
+
   calculateOverallScore(scores) {
     const weights = {
-      mbti: 0.2,
-      values: 0.3,
-      emotional: 0.25,
+      mbti: 0.15,
+      values: 0.25,
+      emotional: 0.20,
       lifestyle: 0.15,
-      growth: 0.1
+      growth: 0.10,
+      lifeStage: 0.15
     };
 
     let weightedScore = 0;
@@ -1432,6 +1532,120 @@ class CompatibilityEngine {
     if (score >= 65) return "Good Match - Worth Exploring";
     if (score >= 55) return "Moderate Match - Could Work with Effort";
     return "Low Match - Significant Differences";
+  }
+}
+
+// ==================== LIFE STAGE MANAGER ====================
+// Handles all life stage calculations and compatibility logic
+
+class LifeStageManager {
+  static getLifeStage(age) {
+    if (!age || age < 20) return null;
+
+    if (age >= 20 && age <= 27) return 'early_career';
+    if (age >= 28 && age <= 35) return 'establishing';
+    if (age >= 36 && age <= 45) return 'established';
+    if (age > 45) return 'mature';
+
+    return null;
+  }
+
+  static getLifeStageLabel(stage) {
+    const labels = {
+      'early_career': 'Early Career (20-27)',
+      'establishing': 'Establishing (28-35)',
+      'established': 'Established (36-45)',
+      'mature': 'Mature (45+)'
+    };
+    return labels[stage] || 'Unknown';
+  }
+
+  static getLifeStageEmoji(stage) {
+    const emojis = {
+      'early_career': '🎓',
+      'establishing': '🚀',
+      'established': '🏆',
+      'mature': '🌟'
+    };
+    return emojis[stage] || '❓';
+  }
+
+  static getCompatibleStages(userStage, flexibility = 'adjacent') {
+    const stageOrder = ['early_career', 'establishing', 'established', 'mature'];
+    const userIndex = stageOrder.indexOf(userStage);
+
+    if (userIndex === -1) return [];
+
+    const compatible = [userStage];
+
+    if (flexibility === 'adjacent' || flexibility === 'flexible') {
+      if (userIndex > 0) compatible.push(stageOrder[userIndex - 1]);
+      if (userIndex < stageOrder.length - 1) compatible.push(stageOrder[userIndex + 1]);
+    }
+
+    if (flexibility === 'flexible') {
+      if (userIndex > 1) compatible.push(stageOrder[userIndex - 2]);
+      if (userIndex < stageOrder.length - 2) compatible.push(stageOrder[userIndex + 2]);
+    }
+
+    return compatible;
+  }
+
+  static calculateLifeStageScore(userStage, matchStage, userFlex = 'adjacent', matchFlex = 'adjacent') {
+    if (!userStage || !matchStage) return 0;
+
+    const stageOrder = ['early_career', 'establishing', 'established', 'mature'];
+    const userIndex = stageOrder.indexOf(userStage);
+    const matchIndex = stageOrder.indexOf(matchStage);
+
+    if (userIndex === -1 || matchIndex === -1) return 0;
+
+    const stageDiff = Math.abs(userIndex - matchIndex);
+
+    const userAcceptable = this.getCompatibleStages(userStage, userFlex);
+    const matchAcceptable = this.getCompatibleStages(matchStage, matchFlex);
+
+    if (!userAcceptable.includes(matchStage) || !matchAcceptable.includes(userStage)) {
+      return 0;
+    }
+
+    if (stageDiff === 0) return 100;
+    if (stageDiff === 1) return 85;
+    if (stageDiff === 2) return 70;
+
+    return 0;
+  }
+
+  static shouldExpandFlexibility(user1, user2) {
+    const bothNoKids = user1.couple_compass_data?.children_vision === 'no' &&
+                       user2.couple_compass_data?.children_vision === 'no';
+
+    if (bothNoKids) return 'flexible';
+
+    const womanWantsKids = (user1.user_gender === 'Female' && user1.age >= 36 &&
+                           user1.couple_compass_data?.children_vision?.includes('yes')) ||
+                          (user2.user_gender === 'Female' && user2.age >= 36 &&
+                           user2.couple_compass_data?.children_vision?.includes('yes'));
+
+    if (womanWantsKids) return 'flexible';
+
+    return 'adjacent';
+  }
+
+  static getLifeStageInsight(userStage, matchStage) {
+    if (userStage === matchStage) {
+      return "You're both in the same life phase - perfect timing! 🎯";
+    }
+
+    const stageOrder = ['early_career', 'establishing', 'established', 'mature'];
+    const userIndex = stageOrder.indexOf(userStage);
+    const matchIndex = stageOrder.indexOf(matchStage);
+
+    if (matchIndex > userIndex) {
+      return "They bring experience and stability to complement your energy 🌟";
+    } else {
+      return "They bring fresh perspective and enthusiasm to your journey 💫";
+    }
   }
 }
 
@@ -1499,6 +1713,10 @@ What makes this interesting? ${compatibility.topReasons[0]}`;
     const highlights = [];
     const data = matchUser.personality_data;
     const compass = matchUser.couple_compass_data;
+
+    const lifeStageLabel = LifeStageManager.getLifeStageLabel(matchUser.life_stage);
+    const lifeStageEmoji = LifeStageManager.getLifeStageEmoji(matchUser.life_stage);
+    highlights.push(`${lifeStageEmoji} ${lifeStageLabel}`);
 
     if (data.love_language_hints?.includes('quality_time')) {
       highlights.push("📱 Will put their phone away when they're with you");
@@ -4145,33 +4363,53 @@ async function savePersonalReport(userId, report) {
   }
 }
 
-// Find potential matches
+// Find potential matches with life stage compatibility
 async function findPotentialMatches(userId, userProfile, limit = 5) {
   try {
     const oppositeGender = userProfile.user_gender === 'Male' ? 'Female' : 'Male';
-
-    // ADD: Extract user's children preference
+    const userLifeStage = userProfile.life_stage;
     const userChildrenPref = userProfile.couple_compass_data?.children_vision;
+
+    const flexibility = LifeStageManager.shouldExpandFlexibility(userProfile, { couple_compass_data: {} });
+    const compatibleStages = LifeStageManager.getCompatibleStages(userLifeStage, flexibility);
+
+    console.log(`🔍 Finding matches for ${userProfile.user_name}:`);
+    console.log(`   Life Stage: ${userLifeStage}`);
+    console.log(`   Compatible Stages: ${compatibleStages.join(', ')}`);
 
     const result = await pool.query(`
       SELECT * FROM users 
       WHERE user_id != $1 
       AND user_gender = $2 
+      AND life_stage = ANY($3::varchar[])
       AND profile_completeness > 70
       AND couple_compass_data != '{}'
-      -- ADD THIS SECTION: Pre-filter obvious dealbreakers
+      -- Pre-filter obvious dealbreakers
       AND NOT (
         -- Children mismatch filter
         (couple_compass_data->>'children_vision' IN ('yes_involved', 'yes_support') 
-         AND $3 = 'no') 
+         AND $4 = 'no') 
         OR
         (couple_compass_data->>'children_vision' = 'no' 
-         AND $3 IN ('yes_involved', 'yes_support'))
+         AND $4 IN ('yes_involved', 'yes_support'))
       )
-      ORDER BY profile_completeness DESC
-      LIMIT $4
-    `, [userId, oppositeGender, userChildrenPref, limit]);
-    
+      ORDER BY 
+        CASE 
+          WHEN life_stage = $5 THEN 0
+          ELSE 1
+        END,
+        profile_completeness DESC
+      LIMIT $6
+    `, [
+      userId,
+      oppositeGender,
+      compatibleStages,
+      userChildrenPref,
+      userLifeStage,
+      limit
+    ]);
+
+    console.log(`✅ Found ${result.rows.length} potential matches`);
     return result.rows;
   } catch (error) {
     console.error('Error finding potential matches:', error);
@@ -4811,6 +5049,69 @@ app.get('/api/user-insights/:userId', async (req, res) => {
   }
 });
 
+// Test life stage logic
+app.get('/api/test-life-stage/:age', async (req, res) => {
+  const age = parseInt(req.params.age);
+  const lifeStage = LifeStageManager.getLifeStage(age);
+  const compatibleStages = LifeStageManager.getCompatibleStages(lifeStage);
+
+  res.json({
+    age,
+    lifeStage,
+    lifeStageLabel: LifeStageManager.getLifeStageLabel(lifeStage),
+    lifeStageEmoji: LifeStageManager.getLifeStageEmoji(lifeStage),
+    compatibleStages,
+    compatibleStagesLabels: compatibleStages.map(s => LifeStageManager.getLifeStageLabel(s))
+  });
+});
+
+// Check current database schema
+app.get('/api/admin/check-life-stage-setup/:adminKey', async (req, res) => {
+  try {
+    const { adminKey } = req.params;
+
+    if (adminKey !== 'soulsync_admin_2025') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const columnsResult = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns
+      WHERE table_name = 'users' 
+      AND column_name IN ('life_stage', 'life_stage_flexibility', 'age')
+    `);
+
+    const distributionResult = await pool.query(`
+      SELECT life_stage, COUNT(*) as count 
+      FROM users 
+      WHERE life_stage IS NOT NULL 
+      GROUP BY life_stage 
+      ORDER BY life_stage
+    `);
+
+    const sampleUsers = await pool.query(`
+      SELECT user_name, age, life_stage 
+      FROM users 
+      WHERE age IS NOT NULL 
+      LIMIT 5
+    `);
+
+    res.json({
+      columnsExist: {
+        age: columnsResult.rows.some(r => r.column_name === 'age'),
+        life_stage: columnsResult.rows.some(r => r.column_name === 'life_stage'),
+        life_stage_flexibility: columnsResult.rows.some(r => r.column_name === 'life_stage_flexibility')
+      },
+      lifeStageDistribution: distributionResult.rows,
+      sampleUsers: sampleUsers.rows,
+      setupComplete: columnsResult.rows.length === 3
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Helper function to get primary attachment style
 function getPrimaryAttachment(hints) {
   if (hints.includes('secure_tendency')) return 'secure';
@@ -5077,7 +5378,8 @@ app.get('/api/health', async (req, res) => {
         'Phase 2': '✅ Couple Compass - Life vision alignment game',
         'Phase 3': '✅ Enhanced Data Structure - Complete profile system',
         'Phase 4': '✅ Report Generation - Personal insights',
-        'Phase 5': '✅ Basic Matchmaking - Compatibility engine'
+        'Phase 5': '✅ Basic Matchmaking - Compatibility engine',
+        'Phase 6': '✅ Life Stage Matching - Age-based compatibility'
       },
       
       conversation_features: [
