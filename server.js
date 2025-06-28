@@ -4487,6 +4487,11 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
       console.log('Could not load insights:', err);
     }
 
+    // Add Couple Compass completion status
+    if (personalityData.couple_compass_complete || Object.keys(user.couple_compass_data || {}).length >= 6) {
+      knownInfo.push('✅ Couple Compass: COMPLETED - Do NOT invite again');
+    }
+
     // Calculate readiness for next steps
     const dataCompleteness = {
       hasLoveLanguage: personalityData.love_language_hints?.length > 0,
@@ -5400,6 +5405,16 @@ app.post('/api/chat', async (req, res) => {
     const user = await getOrCreateUser(userId);
     const conversationHistory = await getUserConversationHistory(userId);
     const userName = user?.user_name || 'there';
+
+    // Check if user already completed Couple Compass
+    const hasCompletedCoupleCompass = user.personality_data?.couple_compass_complete || false;
+    const coupleCompassAnswers = user.couple_compass_data || {};
+    const hasAnsweredQuestions = Object.keys(coupleCompassAnswers).length >= 6;
+    const alreadyCompleted = hasCompletedCoupleCompass || hasAnsweredQuestions;
+
+    if (alreadyCompleted) {
+      console.log(`✅ ${userName} already completed Couple Compass - skipping invitation`);
+    }
     
     const aria = new AriaPersonality();
     const coupleCompass = aria.coupleCompass; // Access the game instance
@@ -5447,31 +5462,53 @@ app.post('/api/chat', async (req, res) => {
         analysis.specific_mentions = specificMentions;
       }
 
-      // Detect Couple Compass acceptance
-      let userSaidYesToCompass = false; // Initialize as false
-      // Check if user is responding to Couple Compass invitation
-      const ariaLastMessage = messages[messages.length - 2]?.content || '';
-      const ariaOfferedCompass = ariaLastMessage.toLowerCase().includes('couple compass');
-      
-      if (ariaOfferedCompass) {
+      // Detect Couple Compass acceptance EARLY
+      let userAcceptedCompass = false;
+      let skipAutoProgression = false;
+
+      // Check if this is a response to Couple Compass invitation
+      const previousMessages = messages.slice(-3); // Last 3 messages
+      const ariaLastMessage = previousMessages.find(m => m.role === 'assistant')?.content || '';
+      const ariaOfferedCompass = ariaLastMessage.toLowerCase().includes('couple compass') &&
+                                (ariaLastMessage.includes('would you like') ||
+                                 ariaLastMessage.includes('ready to begin'));
+
+      if (ariaOfferedCompass && !alreadyCompleted && !coupleCompassState?.active) {
         const userMessage = latestUserMessage.content.toLowerCase();
-        const acceptanceWords = ['yes', 'sure', 'ok', 'okay', 'let\'s play', 'let\'s go', 'yeah', 'yep', 'absolutely', 'definitely'];
-        if (acceptanceWords.some(word => userMessage.includes(word))) {
-          userSaidYesToCompass = true;
+        const acceptanceWords = [
+          'yes', 'sure', 'ok', 'okay', 'let\'s go', 'lets go', 'let\'s do',
+          'lets do', 'let\'s start', 'lets start', 'yeah', 'yep', 'absolutely',
+          'definitely', 'ready', 'begin', 'start', 'play', 'try'
+        ];
+
+        userAcceptedCompass = acceptanceWords.some(word => {
+          const regex = new RegExp(`\\b${word}\\b`, 'i');
+          return regex.test(userMessage);
+        });
+
+        if (userAcceptedCompass) {
+          console.log(`🎯 User ${userName} accepted Couple Compass!`);
+          skipAutoProgression = true;
         }
       }
 
       // Initialize Couple Compass game state
       let gameState = null;
-      if (userSaidYesToCompass && !coupleCompassState?.active) {
+      if (userAcceptedCompass && !coupleCompassState?.active && !alreadyCompleted) {
         coupleCompass.reset(); // Start fresh
         const firstQuestion = coupleCompass.getCurrentQuestion();
-        gameState = {
-          active: true,
-          questionIndex: 0,
-          currentQuestion: firstQuestion,
-          questionId: firstQuestion.id
-        };
+
+        if (firstQuestion) {
+          gameState = {
+            active: true,
+            questionIndex: 0,
+            currentQuestion: firstQuestion,
+            questionId: firstQuestion.id,
+            started: true
+          };
+
+          console.log(`🎮 Couple Compass started for ${userName} - Question 1: ${firstQuestion.id}`);
+        }
       }
 
       // Process A/B/C/D answers during active Couple Compass game
@@ -5646,13 +5683,14 @@ app.post('/api/chat', async (req, res) => {
 
       const totalKnowledge = Object.values(knowledgeScore).reduce((a, b) => a + b, 0);
       autoProgressCheck.hasEnoughData = totalKnowledge >= 3;
-      autoProgressCheck.readyForCompass = autoProgressCheck.hasEnoughData && 
+      autoProgressCheck.readyForCompass = autoProgressCheck.hasEnoughData &&
                                          conversationHistory.length >= 5 &&
-                                         !updatedProfile.personalityData.couple_compass_complete;
+                                         !alreadyCompleted &&
+                                         !skipAutoProgression;
 
-      // Force Couple Compass invitation if ready
-      if (autoProgressCheck.readyForCompass && !coupleCompassState?.active) {
-        console.log(`🎯 Auto-triggering Couple Compass for ${userName} - Knowledge score: ${totalKnowledge}/5`);
+      // Only force invitation if truly needed
+      if (autoProgressCheck.readyForCompass && !coupleCompassState?.active && !gameState) {
+        console.log(`🎯 Auto-triggering Couple Compass invitation for ${userName}`);
 
         // Build personalized invitation
         const knownTraits = [];
@@ -5792,6 +5830,25 @@ app.post('/api/chat', async (req, res) => {
         ...systemMessages,
         ...messages.slice(1) // Skip original system message
       ];
+
+      // If game just started, override with first question
+      if (gameState?.started) {
+        const firstQuestionText = getCoupleCompassQuestionText(0);
+
+        return res.json({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: `Great! Let's start the Couple Compass. This will help me understand your relationship values better.\n\n${firstQuestionText}`
+            }
+          }],
+          userInsights: {
+            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+            coupleCompassActive: true,
+            coupleCompassGameState: gameState
+          }
+        });
+      }
 
       // Call OpenAI with optimized settings
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
