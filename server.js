@@ -2328,83 +2328,63 @@ What makes this interesting? ${compatibility.topReasons[0]}`;
 
 class ConversationDirector {
   constructor() {
+    this.planner = new MatchmakerPlanner();
     this.missions = [
       {
-        id: 'ENERGY_LIFESTYLE',
-        name: 'Energy & Lifestyle Discovery',
-        messages: [1, 5],
-        requiredData: ['social_preference', 'recharge_style'],
-        targetMBTI: 'E_I',
-        goal: 'Understand introvert/extrovert tendencies and daily rhythm'
+        id: 'DISCOVERY',
+        range: [1, 5],
+        goals: ['lifestyle_preferences', 'values_alignment']
       },
       {
-        id: 'VALUES_PRIORITIES',
-        name: 'Values & Priorities Exploration',
-        messages: [6, 10],
-        requiredData: ['core_values', 'dealbreakers'],
-        targetMBTI: 'T_F',
-        goal: 'Discover what matters most in relationships'
+        id: 'CORE_NEEDS',
+        range: [6, 10],
+        goals: ['attachment_style', 'love_language', 'conflict_style']
       },
       {
-        id: 'LOVE_DYNAMICS',
-        name: 'Love Dynamics Understanding',
-        messages: [11, 15],
-        requiredData: ['attachment_hints', 'love_language_hints'],
-        targetMBTI: 'S_N',
-        goal: 'Learn how they connect and show love'
-      },
-      {
-        id: 'COUPLE_COMPASS',
-        name: 'Structured Assessment',
-        messages: [12, 999],
-        requiredData: ['couple_compass_complete'],
-        goal: 'Complete Couple Compass for detailed matching'
+        id: 'VISION',
+        range: [11, 999],
+        goals: ['emotional_needs', 'couple_compass_complete']
       }
     ];
 
     this.bannedTopics = new Set();
     this.topicCounts = new Map();
+    this.metrics = { messages: 0, insights: 0, loops: 0 };
   }
 
-  assessConversation(messages, userProfile, conversationCount) {
-    const currentMission = this.getCurrentMission(conversationCount);
-    const missionProgress = this.calculateMissionProgress(currentMission, userProfile);
-    const stuckPattern = this.detectStuckPattern(messages);
-
-    return {
-      currentMission,
-      missionProgress,
-      isStuck: stuckPattern.detected,
-      stuckReason: stuckPattern.reason,
-      bannedTopics: Array.from(this.bannedTopics),
-      shouldEscalate: conversationCount >= 12 && !userProfile.personality_data?.couple_compass_complete,
-      nextAction: this.determineNextAction(currentMission, missionProgress, stuckPattern)
-    };
+  async loadUserInsights(userId) {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM user_insight_map WHERE user_id = $1',
+        [userId]
+      );
+      return result.rows[0] || {};
+    } catch (err) {
+      console.error('Error loading insights:', err);
+      return {};
+    }
   }
 
   getCurrentMission(messageCount) {
-    return this.missions.find(m =>
-      messageCount >= m.messages[0] && messageCount <= m.messages[1]
-    ) || this.missions[3];
+    return (
+      this.missions.find(m => messageCount >= m.range[0] && messageCount <= m.range[1]) ||
+      this.missions[this.missions.length - 1]
+    );
   }
 
-  calculateMissionProgress(mission, userProfile) {
-    const personality = userProfile.personality_data || {};
+  calculateMissionProgress(mission, insightMap) {
+    const goals = mission.goals || [];
     let collected = 0;
-    let total = mission.requiredData.length;
-
-    mission.requiredData.forEach(dataPoint => {
-      if (dataPoint === 'couple_compass_complete' && personality.couple_compass_complete) {
-        collected++;
-      } else if (personality[dataPoint]?.length > 0) {
+    goals.forEach(g => {
+      if (insightMap[g] && insightMap[g].confidence > 0) {
         collected++;
       }
     });
-
+    const total = goals.length;
     return {
       collected,
       total,
-      percentage: Math.round((collected / total) * 100),
+      percentage: total ? Math.round((collected / total) * 100) : 0,
       complete: collected === total
     };
   }
@@ -2412,91 +2392,94 @@ class ConversationDirector {
   trackTopic(topic) {
     const count = (this.topicCounts.get(topic) || 0) + 1;
     this.topicCounts.set(topic, count);
-
     if (count >= 3) {
       this.bannedTopics.add(topic);
+      this.metrics.loops++;
       return true;
     }
     return false;
   }
 
   detectStuckPattern(messages) {
-    const recentMessages = messages.slice(-10);
-
-    const frustrationKeywords = ['redundant', 'again', 'loop', 'repeat', 'asked already'];
-    const frustrated = recentMessages.some(msg => {
-      // Handle both formats: OpenAI format and internal format
-      const messageText = msg.content || msg.text || '';
-      const isUserMessage = msg.role === 'user' || !msg.isAI;
-
-      return isUserMessage && frustrationKeywords.some(keyword =>
-        messageText.toLowerCase().includes(keyword)
-      );
-    });
-
-    if (frustrated) {
+    const lastUserMessages = messages
+      .slice(-5)
+      .filter(m => m.role === 'user' || !m.isAI)
+      .map(m => m.content || m.text || '');
+    const joined = lastUserMessages.join(' ').toLowerCase();
+    const frustration = ['again', 'repeat', 'already', 'loop'];
+    if (frustration.some(w => joined.includes(w))) {
       return { detected: true, reason: 'user_frustrated' };
     }
-
-    const lastFiveMessages = messages.slice(-5);
-    const hasNewInsight = lastFiveMessages.some(msg => {
-      const messageText = msg.content || msg.text || '';
-      return messageText.includes('?') || messageText.length > 100;
-    });
-
-    if (!hasNewInsight) {
-      return { detected: true, reason: 'no_progress' };
+    if (lastUserMessages.length >= 5 && new Set(lastUserMessages).size <= 2) {
+      return { detected: true, reason: 'repetition' };
     }
-
     return { detected: false, reason: null };
   }
 
-  determineNextAction(mission, progress, stuckPattern) {
-    if (stuckPattern.detected) {
-      if (stuckPattern.reason === 'user_frustrated') {
-        return 'ACKNOWLEDGE_AND_PIVOT';
-      }
-      return 'FORCE_TRANSITION';
-    }
+  assessConversation(messages, userProfile, conversationCount) {
+    this.metrics.messages = conversationCount;
+    const mission = this.getCurrentMission(conversationCount);
+    const insights = userProfile.insight_map || {};
+    const missionProgress = this.calculateMissionProgress(mission, insights);
+    const stuck = this.detectStuckPattern(messages);
 
-    if (progress.complete) {
-      return 'ADVANCE_MISSION';
-    }
-
-    if (mission.id === 'COUPLE_COMPASS') {
-      return 'INITIATE_COUPLE_COMPASS';
-    }
-
-    return 'CONTINUE_MISSION';
-  }
-
-  getMissionGuidance(mission, userData, bannedTopics) {
     return {
-      objective: mission.goal,
-      targetData: mission.requiredData.filter(d => !userData[d]),
-      avoidTopics: bannedTopics,
-      suggestedApproach: this.getSuggestedApproach(mission),
-      mbtiTarget: mission.targetMBTI
+      currentMission: mission,
+      missionProgress,
+      isStuck: stuck.detected,
+      stuckReason: stuck.reason,
+      bannedTopics: Array.from(this.bannedTopics),
+      shouldEscalate:
+        conversationCount >= 12 && !userProfile.personality_data?.couple_compass_complete,
+      nextAction: stuck.detected
+        ? 'FORCE_TRANSITION'
+        : missionProgress.complete
+        ? 'ADVANCE_MISSION'
+        : 'CONTINUE_MISSION'
     };
   }
 
-  getSuggestedApproach(mission) {
-    const approaches = {
-      'ENERGY_LIFESTYLE': 'Use their daily activities to understand social preferences',
-      'VALUES_PRIORITIES': 'Bridge from lifestyle to what matters in relationships',
-      'LOVE_DYNAMICS': 'Explore how they connect emotionally with others',
-      'COUPLE_COMPASS': 'Introduce as a fun, quick way to understand relationship preferences'
+  getMissionGuidance(mission, insightMap, bannedTopics) {
+    return {
+      objective: mission.id,
+      targetData: mission.goals.filter(g => !(insightMap[g] && insightMap[g].confidence > 0)),
+      avoidTopics: bannedTopics
     };
-    return approaches[mission.id];
   }
 
   generateEscapeMessage(reason) {
     const escapes = {
-      'user_frustrated': "You're absolutely right - I was going in circles there! 😅 Let me switch gears. What I really want to understand is what you're looking for in a partner. What matters most to you?",
-      'no_progress': "You know what? I realize we've been chatting but I haven't asked the important stuff. Mind if we dive a bit deeper? I'm curious about what you really need in a relationship.",
-      'force_compass': "I'm getting such a good picture of who you are! Ready to try something fun? I have this quick tool called Couple Compass that helps me understand exactly what you're looking for. Takes just 5 minutes!"
+      user_frustrated:
+        "I'm sorry if this feels repetitive. Let's switch gears—what's something important you want in a partner?",
+      repetition:
+        "Looks like we're going in circles. Tell me what matters most to you in love.",
+      force_compass:
+        "I think I have a good sense of you! Want to try a quick quiz called Couple Compass?"
     };
-    return escapes[reason] || escapes['no_progress'];
+    return escapes[reason] || escapes.repetition;
+  }
+
+  async generateSmartPrompt(userId, history, userProfile) {
+    const insights = await this.loadUserInsights(userId);
+    const mission = this.getCurrentMission(history.length);
+    const missionProgress = this.calculateMissionProgress(mission, insights);
+    const userProgress = this.planner.analyzeUserProgress(insights);
+    const nextGoal = this.planner.selectNextGoal(
+      userProgress,
+      history.slice(-1)[0]?.content || '',
+      history.length
+    );
+    const question = this.planner.generateGoalQuestion(
+      nextGoal,
+      history.slice(-1)[0]?.content || ''
+    );
+    const guidance = this.getMissionGuidance(mission, insights, Array.from(this.bannedTopics));
+
+    return {
+      prompt: question ? question.question : '',
+      guidance,
+      progress: missionProgress
+    };
   }
 }
 
