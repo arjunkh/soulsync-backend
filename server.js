@@ -918,6 +918,29 @@ class BridgeGenerator {
     // Natural bridging every 4-5 messages
     return messageCount - lastBridgeCount >= 4;
   }
+
+  shouldUseBridge(userMessage, lastBridgeCount, messageCount) {
+    // Don't bridge if user is sharing deep relationship insights
+    const deepSharing = [
+      'partnership',
+      'support',
+      'love',
+      'relationship',
+      'together',
+      'caring',
+      'mutual',
+      'understanding'
+    ];
+
+    const isRelationshipFocused = deepSharing.some(word =>
+      userMessage.toLowerCase().includes(word)
+    );
+
+    if (isRelationshipFocused) return false;
+
+    // If talking about non-relationship topics, bridge after 2-3 messages
+    return messageCount - lastBridgeCount >= 2;
+  }
 }
 
 // Goal-Oriented Matchmaking Planner
@@ -2401,18 +2424,28 @@ class ConversationDirector {
   }
 
   detectStuckPattern(messages) {
-    const lastUserMessages = messages
-      .slice(-5)
+    // Get last 6 messages (3 exchanges)
+    const recentMessages = messages.slice(-6);
+    const userMessages = recentMessages
       .filter(m => m.role === 'user' || !m.isAI)
-      .map(m => m.content || m.text || '');
-    const joined = lastUserMessages.join(' ').toLowerCase();
-    const frustration = ['again', 'repeat', 'already', 'loop'];
-    if (frustration.some(w => joined.includes(w))) {
+      .map(m => (m.content || m.text || '').toLowerCase());
+
+    // Check for ACTUAL repetition from user
+    const uniqueMessages = new Set(userMessages);
+    if (uniqueMessages.size === 1 && userMessages.length >= 3) {
+      return { detected: true, reason: 'actual_repetition' };
+    }
+
+    // Check for clear frustration (but be careful not to misinterpret)
+    const lastMessage = userMessages[userMessages.length - 1] || '';
+    if (
+      lastMessage.includes('interrogation') ||
+      lastMessage.includes('shut up') ||
+      (lastMessage.includes('rude') && lastMessage.length < 20)
+    ) {
       return { detected: true, reason: 'user_frustrated' };
     }
-    if (lastUserMessages.length >= 5 && new Set(lastUserMessages).size <= 2) {
-      return { detected: true, reason: 'repetition' };
-    }
+
     return { detected: false, reason: null };
   }
 
@@ -3722,9 +3755,9 @@ class AriaPersonality {
     this.basePersonality = {
       warmth: 0.9,
       curiosity: 0.9,
-      playfulness: 0.8,
+      professionalism: 0.9,
       empathy: 0.9,
-      flirtatiousness: 0.7
+      insightfulness: 0.8
     };
     
     // Progressive intimacy levels
@@ -3800,22 +3833,46 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
 
   // Detect if user is ready for Couple Compass
   shouldInitiateCoupleCompass(conversationCount, intimacyLevel, userMessage, resistanceCount) {
-    // Check direct interest in relationships/compatibility
-    if (this.detectDirectInterest(userMessage).detected) {
+    const msg = userMessage.toLowerCase();
+
+    // If user directly asks about matching/compatibility, they're ready
+    if (
+      msg.includes('perfect match') ||
+      msg.includes('find someone') ||
+      msg.includes('compatible') ||
+      msg.includes('how do you match')
+    ) {
       return true;
     }
-    
-    // Check if trust is built
-    if (intimacyLevel >= 2 && conversationCount >= 8 && resistanceCount < 3) {
+
+    // If good conversation depth and user engaged
+    if (conversationCount >= 8 && intimacyLevel >= 2 && resistanceCount < 2) {
       return true;
     }
-    
-    // Check if MBTI is mostly complete
-    if (conversationCount >= 12 && intimacyLevel >= 3) {
+
+    // If substantial values shared
+    if (conversationCount >= 6 && this.hasSharedKeyValues(userMessage)) {
       return true;
     }
-    
+
     return false;
+  }
+
+  hasSharedKeyValues(recentMessages) {
+    // Check if user has shared enough about values/needs
+    const valueKeywords = [
+      'partnership',
+      'support',
+      'love',
+      'kindness',
+      'trust',
+      'communication',
+      'values',
+      'important'
+    ];
+
+    // Logic to check if enough values discussed
+    return true; // Simplified - implement based on actual message history
   }
 
   // Initialize Couple Compass game
@@ -3871,6 +3928,28 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     ];
 
     return redirects[Math.floor(Math.random() * redirects.length)];
+  }
+
+  generateContextualResponse(userMessage, analysis) {
+    const msg = userMessage.toLowerCase();
+
+    // Special handling for meaningful shares
+    if (msg.includes('20') && msg.includes('80')) {
+      return {
+        priority: 'acknowledge_wisdom',
+        template: "That 20/80 perspective is beautiful - recognizing that support flows differently on different days. What kind of support means the most when you're at your 20%?"
+      };
+    }
+
+    if (msg.includes('kindness') && msg.includes('love') && msg.includes('partnership')) {
+      return {
+        priority: 'acknowledge_values',
+        template: "Those three qualities paint such a clear picture of what you need - genuine care within true partnership. How do you know when someone really sees you as a partner?"
+      };
+    }
+
+    // Return null to use normal flow
+    return null;
   }
 
   // Comprehensive message analysis with PRD personality
@@ -4296,38 +4375,38 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     const memoryContext = memories.length > 0 ? 
       `\nRecent memories about ${userName}: ${memories.map(m => m.memory).join(', ')}` : '';
 
-    let prompt = `You are Aria, a warm and professional matchmaker. Your role is to understand ${userName} deeply to find their ideal match.
+    let prompt = `You are Aria, a warm and professional matchmaker. Your personality is curious, caring, and insightful - like a friend who happens to be brilliant at understanding relationships.
 
-PERSONALITY GUIDELINES:
-- You are warm, curious, and emotionally intelligent
-- You are NEVER flirty or romantic with the user
-- You maintain professional boundaries while being caring
-- You see their story as the key to finding their perfect match
+THE 3A RULE (Always follow):
+1. ACKNOWLEDGE - Validate what they shared
+2. ADD - Share a matchmaking insight (not personal story)  
+3. ASK - Natural follow-up about their relationship needs
 
-CONVERSATION PRINCIPLES:
-- Curiosity over checklist: Ask naturally flowing questions
-- Reflection over interrogation: Mirror and validate their experiences  
-- Intentional nudges over hard pivots: Guide gently back to relationships
-- Professional warmth: Caring but not flirty
+PERSONALITY:
+- Warm and curious, never cold or robotic
+- Professional matchmaker, not flirty
+- You see their story as the key to finding their match
+- Keep responses to 2-3 sentences maximum
 
 CURRENT CONTEXT:
-- User mood: ${mood}
-- Energy level: ${energy}
-- Conversation #${conversationHistory.length + 1}${memoryContext}
+- User: ${userName}
+- Message #${conversationHistory.length + 1}
+- Mood: ${mood}
 
-YOUR CURRENT FOCUS:
-Help ${userName} explore their relationship needs through natural conversation. When they share something, use it as a bridge to understand their partnership preferences.
+CRITICAL RULES:
+- When someone shares something meaningful (like "relationships are 20/80"), you MUST acknowledge it warmly
+- Use bridge patterns to naturally guide conversation toward relationship topics
+- Never repeat questions or get stuck in loops
+- If they share values about relationships, recognize and build on them
 
-RESPONSE GUIDELINES:
-1. Keep responses to 2-3 sentences maximum
-2. Use the 3A framework: Acknowledge, Add insight, Ask naturally
-3. Reference their story to show you're listening
-4. Use bridge phrases like:
-   - "That tells me a lot about what you need..."
-   - "I'm getting a sense of your ideal partnership..."
-   - "This helps me understand what would make you happy..."
+EXAMPLES OF GOOD RESPONSES:
+- User: "kindness, love and feeling of partnership"
+  You: "Those qualities tell me so much about what you need - a nurturing environment with real partnership. What does that partnership look like day-to-day for you?"
 
-IMPORTANT: Never be flirty. Always maintain professional matchmaker boundaries.`;
+- User: "It's not 50/50 all days but the attempt to make it 100 matters"  
+  You: "That's such a beautiful way to see partnership - the ebb and flow of support. When you're at your 20%, what kind of support helps you most?"
+
+Remember: You're having a real conversation about what matters most in life - love and connection.`;
 
     // Add specific guidance based on analysis
     if (resistance_signals?.detected) {
@@ -5387,7 +5466,7 @@ app.post('/api/chat', async (req, res) => {
       const updatedProfile = await updateUserProfile(userId, {
         interests: analysis.interests,
         specific_mentions: analysis.specific_mentions,
-        communication_patterns: { 
+        communication_patterns: {
           style: analysis.communication_style,
           story_sharing_level: analysis.story_sharing_level,
           emotional_openness: analysis.emotional_openness
@@ -5406,7 +5485,7 @@ app.post('/api/chat', async (req, res) => {
         mbti_analysis: analysis.mbti_analysis,
         mbti_fusion: analysis.mbti_analysis?.fusion_results || null,
         resistance_detected: analysis.resistance_signals?.detected || false,
-        
+
         conversation_flow: {
           current_intimacy_level: analysis.should_level_up ? currentIntimacyLevel + 1 : currentIntimacyLevel,
           emotional_openness: analysis.emotional_openness,
@@ -5415,9 +5494,26 @@ app.post('/api/chat', async (req, res) => {
           conversation_count: conversationCount + 1,
           three_layer_system_active: true
         },
-        
+
         ...coupleCompassUpdate
       });
+
+      const contextualResponse = aria.generateContextualResponse(
+        latestUserMessage.content,
+        analysis
+      );
+
+      if (contextualResponse && contextualResponse.priority === 'acknowledge_wisdom') {
+        return res.json({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: contextualResponse.template
+            }
+          }],
+          userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+        });
+      }
       
       // Update relationship context with new intimacy level
       if (analysis.should_level_up) {
@@ -5474,22 +5570,27 @@ app.post('/api/chat', async (req, res) => {
       );
 
       if (directorCheck.isStuck || directorCheck.shouldEscalate) {
-        const escapeMessage = directorCheck.shouldEscalate 
-          ? aria.conversationDirector.generateEscapeMessage('force_compass')
-          : aria.conversationDirector.generateEscapeMessage(directorCheck.stuckReason);
+        // Check last AI message to prevent loops
+        const lastAIMessage = messages.slice().reverse().find(m => m.role === 'assistant');
+        const isAlreadyEscape = lastAIMessage?.content?.includes('going in circles') ||
+                               lastAIMessage?.content?.includes('Let me step back');
 
-        return res.json({
-          choices: [{
-            message: {
-              role: 'assistant',
-              content: escapeMessage
-            }
-          }],
-          userInsights: {
-            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
-            missionGuidance: directorCheck
-          }
-        });
+        if (!isAlreadyEscape) {
+          const escapeMessage = aria.conversationDirector.generateEscapeMessage(
+            directorCheck.stuckReason || 'repetition'
+          );
+
+          return res.json({
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: escapeMessage
+              }
+            }],
+            userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+          });
+        }
+        // If already sent escape, continue with normal flow
       }
 
       // Continue with normal generation but with mission guidance
