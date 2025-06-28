@@ -736,6 +736,172 @@ class AriaPersonalShares {
   }
 }
 
+// Professional Bridge Generator - Natural Conversation Transitions
+class BridgeGenerator {
+  constructor() {
+    // Good bridge patterns from document
+    this.bridgeTemplates = {
+      work_stress: {
+        keywords: ['work', 'job', 'stress', 'busy', 'career', 'office'],
+        bridges: [
+          "That sounds {intensity}. Would you want someone who supports that grind — or helps you find balance?",
+          "Work-life balance is so personal. Do you need a partner who matches your ambition or complements it?",
+          "{acknowledgment}. In a relationship, would you want someone in a similar field or completely different?"
+        ]
+      },
+      food_cooking: {
+        keywords: ['cook', 'food', 'eat', 'restaurant', 'meal', 'dinner'],
+        bridges: [
+          "Cooking says a lot about how we show love. Would you say that's one of your love languages?",
+          "{acknowledgment}. Do you see sharing meals as quality time or more of a daily routine?",
+          "Food brings people together. Are you looking for someone who shares your culinary interests?"
+        ]
+      },
+      travel_movement: {
+        keywords: ['travel', 'move', 'city', 'adventure', 'explore', 'trip'],
+        bridges: [
+          "Do you need a partner who matches your wanderlust or someone who grounds you?",
+          "{acknowledgment}. Would your ideal partner share your adventurous spirit or balance it with stability?",
+          "That restless energy - is it something you'd want mirrored or balanced in a relationship?"
+        ]
+      },
+      family: {
+        keywords: ['family', 'parents', 'siblings', 'home', 'childhood'],
+        bridges: [
+          "Family shapes so much about how we love. How important is family compatibility to you?",
+          "{acknowledgment}. Do you see yourself with someone who has similar family values?",
+          "Those family dynamics - they really influence what we need in partnerships, don't they?"
+        ]
+      },
+      emotional_growth: {
+        keywords: ['therapy', 'growth', 'healing', 'mental health', 'self-care'],
+        bridges: [
+          "That's really brave. Do you value that kind of emotional awareness in a partner too?",
+          "{acknowledgment}. Would you want someone on a similar growth journey?",
+          "Self-awareness like that is rare. Is emotional intelligence a must-have for you?"
+        ]
+      },
+      lifestyle: {
+        keywords: ['weekend', 'free time', 'hobbies', 'routine', 'morning', 'night'],
+        bridges: [
+          "Are you more of a homebody in love too — or need someone who pulls you out?",
+          "{acknowledgment}. Do you want a partner who shares your rhythm or adds variety?",
+          "Lifestyle compatibility matters. Would you want someone with a similar routine?"
+        ]
+      },
+      disinterest: {
+        keywords: ['how are you', 'whats up', 'hey', 'random', 'whatever'],
+        bridges: [
+          "Sweet of you to ask — but I'd be a bad matchmaker if I didn't ask: what kind of connection are you hoping to find?",
+          "I appreciate that! Now, let me do my job — what would make a relationship feel right to you?",
+          "That's kind! Back to you though — what matters most in your ideal partnership?"
+        ]
+      }
+    };
+
+    // Acknowledgment templates
+    this.acknowledgments = {
+      positive: ["That sounds wonderful", "I love that", "That's beautiful"],
+      challenging: ["That sounds tough", "That must be challenging", "I hear you"],
+      neutral: ["That's interesting", "I see", "That makes sense"]
+    };
+
+    // Intensity modifiers
+    this.intensities = {
+      high: ["really challenging", "intense", "overwhelming"],
+      medium: ["demanding", "busy", "full"],
+      low: ["manageable", "steady", "routine"]
+    };
+  }
+
+  generateBridge(userMessage, targetGoal = null) {
+    const message = userMessage.toLowerCase();
+
+    // Find matching bridge category
+    let selectedCategory = null;
+    let highestMatch = 0;
+
+    for (const [category, data] of Object.entries(this.bridgeTemplates)) {
+      const matchCount = data.keywords.filter(keyword => message.includes(keyword)).length;
+      if (matchCount > highestMatch) {
+        highestMatch = matchCount;
+        selectedCategory = category;
+      }
+    }
+
+    if (!selectedCategory) {
+      return this.getDefaultBridge(targetGoal);
+    }
+
+    // Select a bridge template
+    const bridges = this.bridgeTemplates[selectedCategory].bridges;
+    let bridge = bridges[Math.floor(Math.random() * bridges.length)];
+
+    // Replace placeholders
+    bridge = this.replacePlaceholders(bridge, userMessage);
+
+    return bridge;
+  }
+
+  replacePlaceholders(bridge, userMessage) {
+    // Determine sentiment
+    const sentiment = this.analyzeSentiment(userMessage);
+
+    // Replace {acknowledgment}
+    const acknowledgment = this.acknowledgments[sentiment][
+      Math.floor(Math.random() * this.acknowledgments[sentiment].length)
+    ];
+    bridge = bridge.replace('{acknowledgment}', acknowledgment);
+
+    // Replace {intensity}
+    const intensity = this.intensities.medium[
+      Math.floor(Math.random() * this.intensities.medium.length)
+    ];
+    bridge = bridge.replace('{intensity}', intensity);
+
+    return bridge;
+  }
+
+  analyzeSentiment(message) {
+    const positive = ['love', 'great', 'amazing', 'happy', 'excited', 'wonderful'];
+    const negative = ['stress', 'hard', 'difficult', 'tired', 'frustrated', 'angry'];
+
+    const posCount = positive.filter(word => message.includes(word)).length;
+    const negCount = negative.filter(word => message.includes(word)).length;
+
+    if (posCount > negCount) return 'positive';
+    if (negCount > posCount) return 'challenging';
+    return 'neutral';
+  }
+
+  getDefaultBridge(targetGoal) {
+    const defaults = {
+      attachment: "How do you typically feel most secure in relationships?",
+      love_language: "What makes you feel most appreciated by someone close to you?",
+      values: "What values are non-negotiable for you in a partnership?",
+      lifestyle: "What does your ideal shared life look like day-to-day?",
+      emotional_needs: "What kind of emotional support helps you thrive?"
+    };
+
+    return defaults[targetGoal] || "Tell me more about what you're looking for in a relationship.";
+  }
+
+  // Check if a bridge would be appropriate
+  shouldBridge(messageCount, lastBridgeCount, currentTopic, userEngagement) {
+    // Don't bridge too often
+    if (messageCount - lastBridgeCount < 3) return false;
+
+    // Don't bridge if user is highly engaged in current topic
+    if (userEngagement === 'high' && currentTopic === 'relationships') return false;
+
+    // Do bridge if conversation is drifting
+    if (currentTopic === 'off_topic' || userEngagement === 'low') return true;
+
+    // Natural bridging every 4-5 messages
+    return messageCount - lastBridgeCount >= 4;
+  }
+}
+
 // PHASE 2: Couple Compass Game Implementation
 class CoupleCompass {
   constructor() {
