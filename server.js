@@ -4287,7 +4287,7 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
 
   // Generate system prompt focused on mission progress
   async generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
-    const { mood, energy, resistance_signals, off_topic } = userAnalysis;
+    const { mood, energy, resistance_signals, off_topic, directorAnalysis } = userAnalysis;
     const personalityData = userProfile.personality_data || {};
     const userName = user?.user_name || 'there';
 
@@ -4354,7 +4354,14 @@ CRITICAL INSTRUCTIONS:
 2. Ensure each option appears on a separate line
 3. Do not add any additional text or commentary
 4. Simply present the question and wait for their A/B/C/D response
-5. Maintain professional, warm tone as their matchmaker`;
+      5. Maintain professional, warm tone as their matchmaker`;
+    }
+
+    if (this.conversationDirector?.generateSmartPromptAddition && directorAnalysis) {
+      const addition = this.conversationDirector.generateSmartPromptAddition(directorAnalysis);
+      if (addition) {
+        prompt += `\n${addition}`;
+      }
     }
 
     return prompt;
