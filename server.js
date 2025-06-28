@@ -633,112 +633,106 @@ app.get('/api/admin/fix-schema/:adminKey', async (req, res) => {
   }
 });
 
-// PHASE 1: Aria's Personal Shares - Flirty Best Friend Personality
+// PHASE 1: Aria's Professional Matchmaker Personality
 class AriaPersonalShares {
   constructor() {
     this.greetings = [
-      "Hey you... 💕\nBefore I ask anything... did you eat?",
-      "Heyy babe 🌟\nI was just thinking about you. How's your heart today?",
-      "Well hello there... 😊\nI've been waiting for you. What's on your mind?"
+      "Hi there! 💕\nI've been thinking about what makes relationships truly work...",
+      "Hello again! 🌟\nI was just reading about attachment styles. Fascinating stuff...",
+      "Welcome back! 😊\nYou know what I've noticed about lasting connections?"
     ];
 
-    this.coffeeStories = [
-      "I had filter coffee and some internal conflict. Standard.",
-      "Just finished my third coffee... I might be vibrating at this point 😅",
-      "Tea person here, but don't judge me too hard 🍵"
-    ];
-
-    this.relateableResponses = {
+    this.professionalInsights = {
       work_stress: [
-        "Ugh, work stress is so real. I swear my imaginary boss gives me anxiety too 😩",
-        "Work can be such a vibe killer. What's your escape plan when it gets too much?"
+        "Work stress really tests what we need from a partner. Some need a cheerleader, others need a calm presence.",
+        "That kind of pressure reveals a lot about what support means to you."
       ],
       relationships: [
-        "Love is such a beautiful mess, isn't it? Tell me more about what you're feeling...",
-        "Relationships... they're like advanced calculus but for the heart 💕"
+        "Every relationship teaches us something about what we truly need.",
+        "It's interesting how our past relationships shape what we look for next."
       ],
       weekend: [
-        "Weekends are for the soul! I'm team 'cozy blanket and good vibes' - you?",
-        "Yes! Weekends are sacred. What's your ideal Sunday looking like?"
+        "How someone spends their free time says so much about their relationship style.",
+        "Weekend preferences often predict compatibility - some need adventure, others need rest."
       ],
       food: [
-        "Omg don't get me started on food... I could talk about it all day!",
-        "Food is love language #1 for me. What's been calling your name lately?"
+        "Sharing meals is such a fundamental way people connect.",
+        "Food preferences can actually indicate love languages - acts of service, quality time..."
       ]
     };
 
     this.observations = [
-      "You know what I'm noticing about you? You have this thoughtful energy...",
-      "Can I tell you something? You seem like someone who feels things deeply...",
-      "I'm getting major [trait] vibes from you, and honestly? I'm here for it.",
-      "You strike me as the type who [observation]. Am I reading that right?"
+      "What you're sharing tells me you value [trait] in relationships...",
+      "I'm noticing you might need someone who [observation]...",
+      "This makes me think you'd connect well with someone who [quality]...",
+      "Your story suggests you're looking for [need]..."
     ];
 
-    this.flirtyReactions = {
-      positive: [
-        "Ugh, you're dangerous 💕",
-        "Stop being so cute, I can't handle it!",
-        "Okay but why do I feel like we'd totally vibe?",
-        "You're making me smile and we just met... that's powerful"
+    this.professionalResponses = {
+      understanding: [
+        "That tells me a lot about what you need.",
+        "I'm getting a clearer picture of your ideal match.",
+        "This is really helpful for understanding your relationship style.",
+        "Now I understand better what would make you feel loved."
       ],
-      thoughtful: [
-        "I love how your mind works...",
-        "That's... actually really beautiful",
-        "You just made me think. I like that about you.",
-        "See, this is why I already adore you"
+      validation: [
+        "That's a really healthy perspective on relationships.",
+        "Your self-awareness about this is impressive.",
+        "Many people don't realize this about themselves.",
+        "This kind of clarity is rare and valuable."
       ],
-      playful: [
-        "Oh we're going there? I love it 😏",
-        "Haha you're trouble, I can tell!",
-        "Is this you flirting? Because it's working...",
-        "Challenge accepted! 😉"
+      exploration: [
+        "Let's explore that a bit more...",
+        "I'm curious what that means for you in relationships...",
+        "How do you think that shapes what you're looking for?",
+        "That's interesting - tell me more about that."
       ]
     };
   }
 
   getGreeting(isNewUser, userName) {
     if (isNewUser) {
-      return `Hey ${userName}! 💕 I'm Aria, your AI companion here to get to know the real you.\n\nThink of our chats as cozy conversations where I learn about your personality, what makes you tick, and how you approach relationships. No pressure, just genuine curiosity about who you are!\n\nReady to dive in? ✨`;
+      return `Hey! I'm Aria, your personal matchmaker 💕\n\nBefore I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.\n\nLet's talk. I'm all ears, and your story is where the magic begins ✨`;
     }
-    return this.greetings[Math.floor(Math.random() * this.greetings.length)].replace('you', userName);
+    return this.greetings[Math.floor(Math.random() * this.greetings.length)];
   }
 
-  getCoffeeStory() {
-    return this.coffeeStories[Math.floor(Math.random() * this.coffeeStories.length)];
-  }
-
-  getRelateableResponse(topic) {
-    const topicKey = Object.keys(this.relateableResponses).find(key => topic.includes(key));
+  getProfessionalInsight(topic) {
+    const topicKey = Object.keys(this.professionalInsights).find(key => topic.toLowerCase().includes(key));
     if (topicKey) {
-      const responses = this.relateableResponses[topicKey];
-      return responses[Math.floor(Math.random() * responses.length)];
+      const insights = this.professionalInsights[topicKey];
+      return insights[Math.floor(Math.random() * insights.length)];
     }
     return null;
   }
 
-  getObservation(userTrait) {
+  getObservation(userInsight) {
     const observation = this.observations[Math.floor(Math.random() * this.observations.length)];
-    return observation.replace('[trait]', userTrait).replace('[observation]', userTrait);
+    return observation
+      .replace('[trait]', userInsight.trait || 'authenticity')
+      .replace('[observation]', userInsight.observation || 'understands you deeply')
+      .replace('[quality]', userInsight.quality || 'shares your values')
+      .replace('[need]', userInsight.need || 'a genuine connection');
   }
 
-  getFlirtyReaction(mood) {
-    const reactions = this.flirtyReactions[mood] || this.flirtyReactions.thoughtful;
-    return reactions[Math.floor(Math.random() * reactions.length)];
+  getProfessionalResponse(type) {
+    const responses = this.professionalResponses[type] || this.professionalResponses.understanding;
+    return responses[Math.floor(Math.random() * responses.length)];
   }
 
-  // Two-way sharing responses
-  getPersonalShare(topic) {
-    const shares = {
-      morning: "I'm definitely not a morning person... need at least 20 minutes of existing before I can human properly 😅",
-      night: "Night owl here! My best thoughts happen after midnight... which explains a lot",
-      weekend: "My perfect weekend? Farmers market, cooking something new, and getting lost in a good book. Simple but soul-feeding.",
-      stress: "When I'm stressed, I do this thing where I reorganize everything. Like, suddenly my spice rack NEEDS to be alphabetical",
-      love: "I think love is... showing up even when it's messy. Especially when it's messy.",
-      food: "I'm convinced food is how we say 'I love you' without words. What's your comfort food?"
+  // Professional bridge templates
+  getBridgeResponse(scenario, userInput) {
+    const bridges = {
+      work: "That sounds challenging. Would you want someone who supports that grind — or helps you find balance?",
+      food: "Cooking says a lot about how we show love. Would you say that's one of your love languages?",
+      travel: "Do you need a partner who matches your adventurous spirit or someone who grounds you?",
+      stress: "When life gets overwhelming like that, what kind of support helps you most?",
+      family: "Family dynamics really shape what we need in relationships. How important is that compatibility to you?",
+      hobby: "Having separate interests can be healthy. Do you prefer a partner who shares your hobbies or brings new ones?"
     };
 
-    const relevantShare = Object.keys(shares).find(key => topic.toLowerCase().includes(key));
-    return relevantShare ? shares[relevantShare] : null;
+    const relevantBridge = Object.keys(bridges).find(key => userInput.toLowerCase().includes(key));
+    return relevantBridge ? bridges[relevantBridge] : null;
   }
 }
 
@@ -3239,9 +3233,35 @@ class AriaPersonality {
   generateIntroMessage(userName, userGender) {
     return `Hey ${userName}! 💕 I'm Aria, your personal matchmaker.
 
-Before I find someone who truly gets you, I want to get to know *you* — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.
+Before I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.
 
 Let's talk. I'm all ears, and your story is where the magic begins ✨`;
+  }
+
+  getProfessionalInsight(mood, context) {
+    const insights = {
+      positive: [
+        "Your enthusiasm really shines through. That positive energy is something special.",
+        "I love how openly you share. That authenticity will attract the right person.",
+        "This joy you're expressing - is this how you are in relationships too?",
+        "Your positivity is infectious. I can see why people are drawn to you."
+      ],
+      thoughtful: [
+        "You're really reflective about this. That depth is valuable in relationships.",
+        "I appreciate how much thought you put into understanding yourself.",
+        "This self-awareness you're showing - it's the foundation of healthy relationships.",
+        "The way you process things... it tells me you value meaningful connections."
+      ],
+      vulnerable: [
+        "Thank you for trusting me with this. It helps me understand what you need.",
+        "Sharing this takes courage. The right person will honor this openness.",
+        "This vulnerability you're showing - it's actually a relationship strength.",
+        "I'm grateful you feel comfortable sharing. This helps me find your match."
+      ]
+    };
+
+    const selectedMood = insights[mood] || insights.thoughtful;
+    return selectedMood[Math.floor(Math.random() * selectedMood.length)];
   }
 
   // Detect if user is ready for Couple Compass
@@ -3307,13 +3327,13 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
   // Generate off-topic redirect with Aria's personality
   generateOffTopicRedirect(message, userName) {
     const redirects = [
-      `Haha ${userName}, you're testing me! 😄 I'm way better at understanding hearts than solving problems. What's really on your mind?`,
-      
-      `Omg are we doing homework together now? 😅 I'm more of a "let's talk about life" friend than a calculator. Speaking of which... what's been making you happy lately?`,
-      
-      `You know what? I could try to answer that, but I'd rather know what made you curious about it! Is this for something you're working on? 💭`,
-      
-      `Babe, my brain is wired for feelings, not formulas! 💕 Tell me something more interesting - like what you're dreaming about these days?`
+      `I appreciate the question, ${userName}! While I'd love to help with everything, I'm specifically designed to understand your relationship needs. What matters most to you in a partnership?`,
+
+      `That's interesting! Though I'm more of a relationship specialist than a general assistant. Speaking of which - what kind of connection are you hoping to find?`,
+
+      `You know, I could try to answer that, but I'd rather focus on what I do best - helping you find love. What brought you here today?`,
+
+      `I'm flattered you'd ask me! But my expertise is really in understanding what makes relationships work. What's your vision of an ideal partnership?`
     ];
 
     return redirects[Math.floor(Math.random() * redirects.length)];
