@@ -1212,22 +1212,35 @@ class TopicTracker {
   }
 
   isTopicClosed(userData, topic) {
+    let result = false;
     switch(topic) {
       case 'love_language':
-        return userData.love_language_hints?.length > 0;
+        result = userData.love_language_hints?.length > 0;
+        break;
       case 'values':
-        return userData.values_discovered?.length >= 3 || userData.user_preferences?.values;
+        result = userData.values_discovered?.length >= 3 || userData.user_preferences?.values;
+        console.log(`🔍 Topic 'values' closed check:
+          - values_discovered: ${JSON.stringify(userData.values_discovered)}
+          - user_preferences.values: ${userData.user_preferences?.values}
+          - Is closed: ${result}
+        `);
+        break;
       case 'support_style':
-        return userData.support_style_captured || userData.user_preferences?.support_style;
+        result = userData.support_style_captured || userData.user_preferences?.support_style;
+        break;
       case 'conflict':
-        return userData.conflict_style || userData.couple_compass_data?.conflict_style;
+        result = userData.conflict_style || userData.couple_compass_data?.conflict_style;
+        break;
       case 'lifestyle':
-        return userData.interests?.length >= 3;
+        result = userData.interests?.length >= 3;
+        break;
       case 'family':
-        return userData.family_values_hints?.length > 0;
+        result = userData.family_values_hints?.length > 0;
+        break;
       default:
-        return false;
+        result = false;
     }
+    return result;
   }
 
   getClosedTopics(userData) {
@@ -4444,6 +4457,7 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     // Initialize topic tracker
     const topicTracker = new TopicTracker();
     const closedTopics = topicTracker.getClosedTopics(personalityData);
+    console.log(`🚫 Closed topics for ${userName}: ${JSON.stringify(closedTopics)}`);
 
     // Build comprehensive known information
     const knownInfo = [];
@@ -4492,6 +4506,8 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     if (personalityData.couple_compass_complete || Object.keys(user.couple_compass_data || {}).length >= 6) {
       knownInfo.push('✅ Couple Compass: COMPLETED - Do NOT invite again');
     }
+
+    console.log(`📝 Known info being sent to prompt: ${knownInfo.length} items`);
 
     // Calculate readiness for next steps
     const dataCompleteness = {
@@ -5416,6 +5432,12 @@ app.post('/api/chat', async (req, res) => {
     // Get or create user profile
     const user = await getOrCreateUser(userId);
     const userName = user?.user_name || 'there';
+
+    console.log(`📋 Complete User Data for ${userName}:
+      - values_discovered: ${JSON.stringify(user.personality_data?.values_discovered)}
+      - user_preferences: ${JSON.stringify(user.personality_data?.user_preferences)}
+      - Memory count: ${(await loadUserMemories(user.user_id, 10)).length}
+    `);
 
     console.log(`📋 User Data Check for ${userName}:
       - Love Language: ${JSON.stringify(user.personality_data?.love_language_hints)}
