@@ -4508,6 +4508,7 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     }
 
     console.log(`📝 Known info being sent to prompt: ${knownInfo.length} items`);
+    console.log(`📝 Known info details:\n${knownInfo.map((item, index) => `  ${index + 1}. ${item}`).join('\n')}\n`);
 
     // Calculate readiness for next steps
     const dataCompleteness = {
