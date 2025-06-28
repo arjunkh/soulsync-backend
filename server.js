@@ -5472,9 +5472,16 @@ app.post('/api/chat', async (req, res) => {
       const ariaOfferedCompass = ariaLastMessage.toLowerCase().includes('couple compass') &&
                                 (ariaLastMessage.includes('would you like') ||
                                  ariaLastMessage.includes('ready to begin'));
+      const userMessage = latestUserMessage.content.toLowerCase();
+
+      console.log(`🔍 DEBUG - Acceptance detection:
+  - previousMessages count: ${previousMessages.length}
+  - ariaLastMessage preview: ${ariaLastMessage.substring(0, 50)}...
+  - ariaOfferedCompass: ${ariaOfferedCompass}
+  - userMessage: ${userMessage}
+`);
 
       if (ariaOfferedCompass && !alreadyCompleted && !coupleCompassState?.active) {
-        const userMessage = latestUserMessage.content.toLowerCase();
         const acceptanceWords = [
           'yes', 'sure', 'ok', 'okay', 'let\'s go', 'lets go', 'let\'s do',
           'lets do', 'let\'s start', 'lets start', 'yeah', 'yep', 'absolutely',
@@ -5687,6 +5694,15 @@ app.post('/api/chat', async (req, res) => {
                                          conversationHistory.length >= 5 &&
                                          !alreadyCompleted &&
                                          !skipAutoProgression;
+
+      console.log(`🔍 DEBUG - Auto-progression check for ${userName}:
+  - alreadyCompleted: ${alreadyCompleted}
+  - skipAutoProgression: ${skipAutoProgression}
+  - hasEnoughData: ${autoProgressCheck.hasEnoughData}
+  - conversationHistory.length: ${conversationHistory.length}
+  - gameState exists: ${!!gameState}
+  - coupleCompassState?.active: ${coupleCompassState?.active}
+`);
 
       // Only force invitation if truly needed
       if (autoProgressCheck.readyForCompass && !coupleCompassState?.active && !gameState) {
