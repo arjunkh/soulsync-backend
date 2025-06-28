@@ -908,104 +908,104 @@ class CoupleCompass {
     this.questions = [
       {
         id: 'living_arrangement',
-        text: "Okay, let's dream a little... Where do you imagine living post-marriage? 🏠",
-        conversational: "So I've been thinking about the future lately... you know, the whole 'building a life with someone' thing. Where do you see yourself setting up home after marriage?",
+        text: "Where do you envision making a home after marriage?",
+        conversational: "Let's start with lifestyle preferences. After marriage, where do you see yourself making a home? This helps me understand what kind of living situation would make you happiest.",
         options: [
-          { value: 'with_parents', text: 'With your parents', emoji: '👨‍👩‍👧‍👦' },
-          { value: 'near_parents', text: 'Near them, but our own space', emoji: '🏘️' },
-          { value: 'new_city', text: 'Fresh start in a new city', emoji: '🌆' },
-          { value: 'flexible', text: 'Wherever love leads', emoji: '💕' }
+          { value: 'with_parents', text: 'With family' },
+          { value: 'near_parents', text: 'Near family, but independent' },
+          { value: 'new_city', text: 'Start fresh in a new location' },
+          { value: 'flexible', text: 'Open to any location' }
         ],
         responses: {
-          'with_parents': "Family is clearly central to your vision of love. That closeness often creates the strongest foundations.",
-          'near_parents': "You value both roots and independence. That balance shows emotional maturity.",
-          'new_city': "Adventure and fresh starts appeal to you. You'll need a partner who shares that pioneering spirit.",
-          'flexible': "Love leads, location follows. That openness to life's possibilities is attractive to the right person."
+          'with_parents': "Family is clearly central to your vision of partnership. This closeness often creates strong support systems and deep roots.",
+          'near_parents': "You value both family connections and independence. This balance shows emotional maturity and clear boundaries.",
+          'new_city': "You're drawn to fresh starts and new adventures. You'll thrive with a partner who shares your pioneering spirit.",
+          'flexible': "Your adaptability is a real strength. You prioritize the relationship over location, which opens many possibilities."
         }
       },
       {
         id: 'financial_style',
-        text: "Money talk - unsexy but important 😅 What feels right to you in a partnership?",
-        conversational: "Okay, let's talk about something real... money in relationships. I know, I know, not the sexiest topic, but it matters. What feels fair and comfortable to you?",
+        text: "How do you envision handling finances in a committed partnership?",
+        conversational: "Financial compatibility matters more than people realize. How do you see yourself handling money matters in a committed relationship?",
         options: [
-          { value: 'provider', text: "I'll provide fully", emoji: '💪' },
-          { value: 'lead_share', text: "I'll lead, but we share", emoji: '🤝' },
-          { value: 'equal', text: '50-50 feels fair', emoji: '⚖️' },
-          { value: 'emotional', text: 'I contribute more emotionally', emoji: '💝' }
+          { value: 'provider', text: 'Primary provider' },
+          { value: 'lead_share', text: 'Main earner, shared responsibilities' },
+          { value: 'equal', text: 'Equal financial partnership' },
+          { value: 'emotional', text: 'Focus on non-financial contributions' }
         ],
         responses: {
-          'provider': "Your desire to provide comes from a caring place. It can create a strong sense of security in a relationship.",
-          'lead_share': "You see partnership as shared responsibility, even if you take the lead. That approach often fosters respect.",
-          'equal': "Equality and fairness are core to you. You envision a true collaboration in love.",
-          'emotional': "You recognize that support isn't only financial. Valuing emotional contribution shows great awareness."
+          'provider': "You see providing as a way to care for your partner. This traditional approach works beautifully with the right match.",
+          'lead_share': "You're comfortable leading financially while valuing partnership. This balanced approach shows both strength and collaboration.",
+          'equal': "Equal partnership is your ideal. You see relationships as true collaborations where both contribute equally.",
+          'emotional': "You recognize that contribution isn't just financial. Your emotional intelligence and other gifts are equally valuable."
         }
       },
       {
         id: 'children_vision',
-        text: "Kids? No kids? Let's talk about little humans... 👶",
-        conversational: "So... the kid question. I'm curious where you stand on the whole mini-humans thing?",
+        text: "What are your thoughts on having children?",
+        conversational: "This is often a key compatibility factor. Where do you currently stand on having children? It's okay if you're still figuring this out.",
         options: [
-          { value: 'yes_involved', text: 'Yes, and I\'ll be hands-on', emoji: '🤱' },
-          { value: 'yes_support', text: 'Yes, but I\'ll need support', emoji: '👨‍👩‍👧' },
-          { value: 'maybe', text: 'Haven\'t decided yet', emoji: '🤔' },
-          { value: 'no', text: 'No, and I\'m clear on that', emoji: '✨' }
+          { value: 'yes_involved', text: 'Yes, want to be actively involved' },
+          { value: 'yes_support', text: 'Yes, with shared parenting' },
+          { value: 'maybe', text: 'Still undecided' },
+          { value: 'no', text: 'Prefer not to have children' }
         ],
         responses: {
-          'yes_involved': "You want to be fully present as a parent. That dedication will mean a lot to your future family.",
-          'yes_support': "You know parenting takes a village. Being honest about needing help shows maturity.",
-          'maybe': "You're still exploring how children fit into your life. Taking time with that decision is wise.",
-          'no': "You're clear that parenting isn't for you. Owning that choice will lead to the right match."
+          'yes_involved': "You're ready to be a hands-on parent. This dedication to family life will be central to your partnership.",
+          'yes_support': "You want children with balanced parenting responsibilities. This practical approach sets healthy expectations.",
+          'maybe': "You're thoughtfully considering this major decision. This openness allows you to find someone to explore the question with.",
+          'no': "You're clear about preferring a child-free life. This self-knowledge helps find someone who shares your vision."
         }
       },
       {
         id: 'conflict_style',
-        text: "Real talk - how do you handle it when things get tense with someone you love? 💭",
-        conversational: "Okay, keeping it real... we all have moments where we clash with people we love. When that happens, what's your style?",
+        text: "How do you typically handle disagreements in close relationships?",
+        conversational: "Every relationship faces disagreements. Understanding how you naturally handle conflict helps me find someone compatible with your communication style.",
         options: [
-          { value: 'talk_out', text: 'Talk it out immediately', emoji: '💬' },
-          { value: 'need_space', text: 'Need space first, then talk', emoji: '🚶' },
-          { value: 'mediator', text: 'Prefer someone to mediate', emoji: '🤲' },
-          { value: 'avoid', text: 'I tend to avoid conflict', emoji: '🤐' }
+          { value: 'talk_out', text: 'Address immediately through discussion' },
+          { value: 'need_space', text: 'Need space before discussing' },
+          { value: 'mediator', text: 'Benefit from outside perspective' },
+          { value: 'avoid', text: 'Tend to avoid confrontation' }
         ],
         responses: {
-          'talk_out': "Addressing issues directly builds trust and prevents resentment.",
-          'need_space': "Taking space before talking can be a healthy way to process emotions.",
-          'mediator': "Seeking a neutral perspective shows you're open to growth.",
-          'avoid': "Avoiding conflict can be protective, but the right partner will help you feel safe discussing tough topics."
+          'talk_out': "Direct communication is your strength. You believe in addressing issues promptly, which prevents resentment from building.",
+          'need_space': "You're self-aware enough to know you need processing time. This emotional intelligence leads to more productive conversations.",
+          'mediator': "You value outside perspective in tough moments. This humility and wisdom can really strengthen a relationship.",
+          'avoid': "Confrontation is challenging for you. The right partner will create a safe space for gentle, patient communication."
         }
       },
       {
         id: 'ambition_balance',
-        text: "Let's dream big - or small! What does your ideal life pace look like? 🌟",
-        conversational: "I've been thinking about ambition lately... like, what does 'success' even mean? For you, what's the dream when it comes to career vs. life?",
+        text: "What's your ideal balance between career and personal life?",
+        conversational: "People have different visions of success and fulfillment. What does your ideal life balance look like?",
         options: [
-          { value: 'high_ambition', text: 'Big career goals, high achiever', emoji: '🚀' },
-          { value: 'balanced', text: 'Success with work-life balance', emoji: '⚡' },
-          { value: 'family_first', text: 'Family and peace over ambition', emoji: '🏡' },
-          { value: 'simple_life', text: 'Simple, quiet life is the dream', emoji: '🌿' }
+          { value: 'high_ambition', text: 'Career-focused, ambitious goals' },
+          { value: 'balanced', text: 'Success with work-life balance' },
+          { value: 'family_first', text: 'Family and relationships first' },
+          { value: 'simple_life', text: 'Simple, peaceful lifestyle' }
         ],
         responses: {
-          'high_ambition': "You have big goals and need a partner who supports that drive.",
-          'balanced': "You strive for success without losing balance. A partner who shares that perspective will resonate with you.",
-          'family_first': "Family and peace are your priorities. You'd thrive with someone who values the same.",
-          'simple_life': "A simple, quiet life appeals to you. Many people seek that stability and contentment."
+          'high_ambition': "Your drive and ambition are impressive. You'll thrive with a partner who either shares or genuinely supports your goals.",
+          'balanced': "You've found the sweet spot between ambition and life. This balanced approach attracts similarly grounded partners.",
+          'family_first': "Relationships are your priority. This clarity about what matters most will guide you to like-minded partners.",
+          'simple_life': "You value peace over ambition. This contentment with simplicity is attractive to those seeking authentic connection."
         }
       },
       {
         id: 'big_mismatch',
-        text: "Okay, hypothetical time... Your partner earns more, wants to delay kids, and prefers living away from family. You? 🤷",
-        conversational: "Let me paint a picture... You fall for someone amazing. But - plot twist - they earn more than you, want to wait on kids, and prefer living away from your family. How does that sit with you?",
+        text: "How would you handle major lifestyle differences with a partner?",
+        conversational: "Here's a scenario: You connect deeply with someone, but they earn more, want to delay children, and prefer living far from family. How would you approach these differences?",
         options: [
-          { value: 'discuss', text: "Let's talk and understand", emoji: '💭' },
-          { value: 'unsure', text: "I'd feel uncertain", emoji: '😕' },
-          { value: 'mismatch', text: 'Might be a dealbreaker', emoji: '🚫' },
-          { value: 'flexible', text: "Love makes me flexible", emoji: '💕' }
+          { value: 'discuss', text: 'Openly discuss and seek compromise' },
+          { value: 'unsure', text: 'Would need time to consider' },
+          { value: 'mismatch', text: 'Might be incompatible' },
+          { value: 'flexible', text: 'Willing to adapt for the right person' }
         ],
         responses: {
-          'discuss': "Open dialogue about differences can strengthen understanding.",
-          'unsure': "Feeling unsure is natural when values clash. Taking time to reflect is wise.",
-          'mismatch': "Knowing your dealbreakers helps you stay true to yourself.",
-          'flexible': "Flexibility can keep love strong, as long as it doesn't compromise your core values."
+          'discuss': "Your commitment to communication and compromise is admirable. This approach builds strong, lasting partnerships.",
+          'unsure': "You're honest about needing time to process big differences. This thoughtfulness prevents hasty decisions.",
+          'mismatch': "You know your non-negotiables. This clarity helps you find someone whose vision naturally aligns with yours.",
+          'flexible': "Your adaptability in love is touching. Just ensure any compromises feel authentic to who you are."
         }
       }
     ];
@@ -1025,13 +1025,15 @@ class CoupleCompass {
 
   introduce() {
     return {
-      text: `Babe... wanna play something with me? 🧭 
+      text: `I'd like to try something called the Couple Compass with you.
 
-It's called **Couple Compass**. It's not a quiz - promise. It's more like... dreamy little moments from our future. You tell me how you'd live them. 💫
+It's a brief assessment that helps me understand your relationship values and life vision. Your responses will be invaluable in identifying truly compatible matches.
 
-I'll ask a few questions about life, love, and everything in between. Just be real with me?`,
-      buttonText: "Let's find our direction 💘",
-      altResponse: "Maybe later? That's cool too. I'll be here when you're ready 💕"
+The questions cover lifestyle preferences, values, and how you approach partnership. There are no right or wrong answers - just what feels authentic to you.
+
+Ready to explore what matters most to you in a relationship?`,
+      buttonText: "Yes, let's begin",
+      altResponse: "That's perfectly fine. We can explore this whenever you feel ready. For now, let's continue getting to know each other."
     };
   }
 
@@ -1075,44 +1077,57 @@ I'll ask a few questions about life, love, and everything in between. Just be re
     const living = this.responses.living_arrangement;
     const financial = this.responses.financial_style;
     const children = this.responses.children_vision;
-    
-    return `${userName}... I think Couple Compass just gave me a better map of your heart. 💕
+    const conflict = this.responses.conflict_style;
+    const ambition = this.responses.ambition_balance;
+    const flexibility = this.responses.big_mismatch;
 
-You're someone who values ${this.getValueDescription(living, financial)}, and when it comes to building a life with someone, you need ${this.getNeedDescription(this.responses)}.
+    return `${userName}, thank you for completing the Couple Compass. Your responses have given me valuable insights into what you're looking for in a partnership.
 
-What strikes me most? ${this.getInsight(this.responses)}
+You're someone who ${this.getValuesSummary(living, financial, ambition)}, and in relationships, you ${this.getRelationshipStyle(conflict, flexibility)}.
 
-I feel like I understand what you're looking for now - not just in love, but in life. And honestly? Someone's going to be very lucky to build that future with you. 🌟`;
+What stands out most: ${this.getKeyInsight(this.responses)}
+
+With this understanding, I can now focus on finding matches who truly align with your values and complement your vision for the future. Your authenticity in these responses will make all the difference in finding the right person.`;
   }
 
-  getValueDescription(living, financial) {
+  getValuesSummary(living, financial, ambition) {
+    const values = [];
+
     if (living === 'with_parents' || living === 'near_parents') {
-      return "family and roots";
-    } else if (financial === 'equal' || financial === 'emotional') {
-      return "partnership and balance";
-    } else {
-      return "independence and growth";
+      values.push("values family connections");
     }
+    if (financial === 'equal') {
+      values.push("believes in equal partnership");
+    }
+    if (ambition === 'balanced') {
+      values.push("seeks life balance");
+    }
+
+    return values.join(" and ") || "has clear values";
   }
 
-  getNeedDescription(responses) {
-    if (responses.conflict_style === 'talk_out') {
-      return "open communication and emotional honesty";
-    } else if (responses.ambition_balance === 'family_first' || responses.ambition_balance === 'simple_life') {
-      return "peace and genuine connection over everything else";
-    } else {
-      return "someone who matches your energy and ambition";
+  getRelationshipStyle(conflict, flexibility) {
+    if (conflict === 'talk_out' && flexibility === 'discuss') {
+      return "approach challenges with open communication";
     }
+    if (flexibility === 'flexible') {
+      return "show remarkable adaptability";
+    }
+    return "have a thoughtful approach to partnership";
   }
 
-  getInsight(responses) {
-    if (responses.big_mismatch === 'flexible') {
-      return "Your flexibility in love shows incredible emotional maturity.";
-    } else if (responses.children_vision === 'yes_involved') {
-      return "Your readiness to be fully present as a parent shows your capacity for deep love.";
-    } else {
-      return "You know yourself well enough to know what you need. That self-awareness is rare.";
+  getKeyInsight(responses) {
+    // Professional insights based on pattern analysis
+    if (responses.children_vision === 'yes_involved' && responses.family_first) {
+      return "Family is clearly at the center of your life vision.";
     }
+    if (responses.conflict_style === 'talk_out' && responses.big_mismatch === 'discuss') {
+      return "Your communication skills will be a real relationship strength.";
+    }
+    if (responses.ambition_balance === 'balanced') {
+      return "You've already figured out what many people spend years learning - the importance of balance.";
+    }
+    return "Your self-awareness about what you need is impressive.";
   }
 
   reset() {
@@ -3125,69 +3140,65 @@ function generateMemoryContext(user, personalityData, coupleCompassData) {
 function getCoupleCompassQuestionText(questionIndex) {
   const questions = [
     {
-      text: "Okay, let's dream a little... Where do you imagine living post-marriage? 🏠",
+      text: "Where do you envision making a home after marriage?",
       options: [
-        "👨‍👩‍👧‍👦 With your parents",
-        "🏘️ Near them, but our own space",
-        "🌆 Fresh start in a new city",
-        "💕 Wherever love leads"
+        "A) With family",
+        "B) Near family, but independent",
+        "C) Start fresh in a new location",
+        "D) Open to any location"
       ]
     },
     {
-      text: "Money talk - unsexy but important 😅 What feels right to you in a partnership?",
+      text: "How do you envision handling finances in a committed partnership?",
       options: [
-        "💪 I'll provide fully",
-        "🤝 I'll lead, but we share",
-        "⚖️ 50-50 feels fair",
-        "💝 I contribute more emotionally"
+        "A) Primary provider",
+        "B) Main earner, shared responsibilities",
+        "C) Equal financial partnership",
+        "D) Focus on non-financial contributions"
       ]
     },
     {
-      text: "Kids? No kids? Let's talk about little humans... 👶",
+      text: "What are your thoughts on having children?",
       options: [
-        "🤱 Yes, and I'll be hands-on",
-        "👨‍👩‍👧 Yes, but I'll need support",
-        "🤔 Haven't decided yet",
-        "✨ No, and I'm clear on that"
+        "A) Yes, want to be actively involved",
+        "B) Yes, with shared parenting",
+        "C) Still undecided",
+        "D) Prefer not to have children"
       ]
     },
     {
-      text: "Real talk - how do you handle it when things get tense with someone you love? 💭",
+      text: "How do you typically handle disagreements in close relationships?",
       options: [
-        "💬 Talk it out immediately",
-        "🚶 Need space first, then talk",
-        "🤲 Prefer someone to mediate",
-        "🤐 I tend to avoid conflict"
+        "A) Address immediately through discussion",
+        "B) Need space before discussing",
+        "C) Benefit from outside perspective",
+        "D) Tend to avoid confrontation"
       ]
     },
     {
-      text: "Let's dream big - or small! What does your ideal life pace look like? 🌟",
+      text: "What's your ideal balance between career and personal life?",
       options: [
-        "🚀 Big career goals, high achiever",
-        "⚡ Success with work-life balance",
-        "🏡 Family and peace over ambition",
-        "🌿 Simple, quiet life is the dream"
+        "A) Career-focused, ambitious goals",
+        "B) Success with work-life balance",
+        "C) Family and relationships first",
+        "D) Simple, peaceful lifestyle"
       ]
     },
     {
-      text: "Okay, hypothetical time... Your partner earns more, wants to delay kids, and prefers living away from family. You? 🤷",
+      text: "How would you handle major lifestyle differences with a partner?",
       options: [
-        "💭 Let's talk and understand",
-        "😕 I'd feel uncertain",
-        "🚫 Might be a dealbreaker",
-        "💕 Love makes me flexible"
+        "A) Openly discuss and seek compromise",
+        "B) Would need time to consider",
+        "C) Might be incompatible",
+        "D) Willing to adapt for the right person"
       ]
     }
   ];
 
   if (questionIndex >= 0 && questionIndex < questions.length) {
     const q = questions[questionIndex];
-    return `${q.text}
-
-A) ${q.options[0]}
-B) ${q.options[1]}
-C) ${q.options[2]}
-D) ${q.options[3]}`;
+    // Double newline ensures proper spacing
+    return `${q.text}\n\n${q.options.join('\n')}`;
   }
 
   return null;
@@ -3975,13 +3986,21 @@ IMPORTANT: Never be flirty. Always maintain professional matchmaker boundaries.`
 
     // Add Couple Compass context if active
     if (coupleCompassState?.active || gameState?.active) {
-      const questionText = gameState?.exactQuestionText || 
-        getCoupleCompassQuestionText(gameState?.questionIndex || coupleCompassState?.questionIndex);
-      
-      prompt += `\n\nCOUPLE COMPASS ACTIVE:
-You're currently asking question ${(gameState?.questionIndex || coupleCompassState?.questionIndex) + 1} of 6.
-Ask EXACTLY this question: "${questionText}"
-Do not add anything else. Wait for their A/B/C/D response.`;
+      const questionIndex = gameState?.questionIndex || coupleCompassState?.questionIndex || 0;
+      const questionText = getCoupleCompassQuestionText(questionIndex);
+
+      prompt += `\n\nCOUPLE COMPASS ASSESSMENT ACTIVE:
+  
+You are administering question ${questionIndex + 1} of 6 in the Couple Compass assessment.
+
+CRITICAL INSTRUCTIONS:
+1. Present EXACTLY this question with proper formatting:
+"${questionText}"
+
+2. Ensure each option appears on a separate line
+3. Do not add any additional text or commentary
+4. Simply present the question and wait for their A/B/C/D response
+5. Maintain professional, warm tone as their matchmaker`;
     }
 
     return prompt;
