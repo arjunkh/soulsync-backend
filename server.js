@@ -119,6 +119,24 @@ async function initializeDatabase() {
       )
     `);
 
+    // User Insight Map for goal tracking
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_insight_map (
+        user_id VARCHAR(255) PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        -- Primary matchmaking insights
+        love_language JSONB DEFAULT '{"value": null, "confidence": 0, "evidence": []}',
+        attachment_style JSONB DEFAULT '{"value": null, "confidence": 0, "evidence": []}',
+        conflict_style JSONB DEFAULT '{"value": null, "confidence": 0, "evidence": []}',
+        lifestyle_preferences JSONB DEFAULT '{"value": null, "confidence": 0, "evidence": []}',
+        values_alignment JSONB DEFAULT '{"value": null, "confidence": 0, "evidence": []}',
+        emotional_needs JSONB DEFAULT '{"value": null, "confidence": 0, "evidence": []}',
+        -- Metadata
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completion_percentage INTEGER DEFAULT 0,
+        ready_for_matching BOOLEAN DEFAULT FALSE
+      )
+    `);
+
     // Add age and additional demographic columns
     await pool.query(`
       ALTER TABLE users 
@@ -899,6 +917,270 @@ class BridgeGenerator {
 
     // Natural bridging every 4-5 messages
     return messageCount - lastBridgeCount >= 4;
+  }
+}
+
+// Goal-Oriented Matchmaking Planner
+class MatchmakerPlanner {
+  constructor() {
+    // Define all matchmaking data points needed
+    this.dataGoals = {
+      // Primary goals (must have)
+      attachment_style: {
+        priority: 1,
+        category: 'emotional',
+        description: 'How they form and maintain emotional bonds',
+        questions: [
+          "What makes you feel most secure in a relationship?",
+          "How do you typically express affection?",
+          "What does emotional support look like to you?"
+        ],
+        keywords: ['secure', 'anxious', 'avoidant', 'independent', 'clingy', 'space']
+      },
+
+      love_language: {
+        priority: 1,
+        category: 'emotional',
+        description: 'How they give and receive love',
+        questions: [
+          "What makes you feel most appreciated by someone close to you?",
+          "How do you naturally show someone you care?",
+          "What small gestures mean the most to you?"
+        ],
+        keywords: ['quality time', 'touch', 'words', 'acts', 'gifts', 'appreciation']
+      },
+
+      conflict_style: {
+        priority: 2,
+        category: 'communication',
+        description: 'How they handle disagreements',
+        questions: [
+          "When you disagree with someone close, what's your instinct?",
+          "How do you prefer to resolve tensions?",
+          "What helps you feel heard during difficult conversations?"
+        ],
+        keywords: ['talk', 'space', 'avoid', 'process', 'immediate', 'calm']
+      },
+
+      lifestyle_preferences: {
+        priority: 2,
+        category: 'lifestyle',
+        description: 'Daily life and routine preferences',
+        questions: [
+          "What does your ideal weekend look like?",
+          "How do you recharge after a long week?",
+          "What's your ideal balance of together vs. alone time?"
+        ],
+        keywords: ['homebody', 'adventurous', 'routine', 'spontaneous', 'social', 'quiet']
+      },
+
+      values_alignment: {
+        priority: 3,
+        category: 'values',
+        description: 'Core values and beliefs',
+        questions: [
+          "What values are non-negotiable for you in a partnership?",
+          "What does a meaningful life look like to you?",
+          "What principles guide your major decisions?"
+        ],
+        keywords: ['family', 'career', 'growth', 'stability', 'adventure', 'tradition']
+      },
+
+      emotional_needs: {
+        priority: 3,
+        category: 'emotional',
+        description: 'What they need to feel fulfilled',
+        questions: [
+          "What do you need from a partner when you're struggling?",
+          "What makes you feel truly understood?",
+          "What kind of emotional environment helps you thrive?"
+        ],
+        keywords: ['support', 'understanding', 'space', 'validation', 'encouragement', 'presence']
+      }
+    };
+
+    // Track conversation state
+    this.conversationState = {
+      currentGoal: null,
+      attemptedGoals: new Set(),
+      completedGoals: new Set(),
+      resistanceEncountered: new Map(),
+      lastGoalSwitch: 0
+    };
+  }
+
+  // Analyze what we already know about the user
+  analyzeUserProgress(userInsightMap) {
+    const progress = {
+      completed: [],
+      partial: [],
+      missing: [],
+      completionPercentage: 0
+    };
+
+    let totalPoints = 0;
+    let completedPoints = 0;
+
+    Object.entries(this.dataGoals).forEach(([goal, config]) => {
+      totalPoints += config.priority;
+
+      if (userInsightMap[goal] && userInsightMap[goal].confidence > 0.7) {
+        progress.completed.push(goal);
+        completedPoints += config.priority;
+      } else if (userInsightMap[goal] && userInsightMap[goal].confidence > 0.3) {
+        progress.partial.push(goal);
+        completedPoints += config.priority * 0.5;
+      } else {
+        progress.missing.push(goal);
+      }
+    });
+
+    progress.completionPercentage = Math.round((completedPoints / totalPoints) * 100);
+    return progress;
+  }
+
+  // Select next conversation goal
+  selectNextGoal(userProgress, conversationContext, messageCount) {
+    // Don't switch goals too frequently
+    if (this.conversationState.currentGoal &&
+        messageCount - this.conversationState.lastGoalSwitch < 3) {
+      return this.conversationState.currentGoal;
+    }
+
+    // Priority: missing high-priority goals first
+    const missingHighPriority = userProgress.missing
+      .filter(goal => this.dataGoals[goal].priority === 1)
+      .filter(goal => !this.conversationState.attemptedGoals.has(goal));
+
+    if (missingHighPriority.length > 0) {
+      const selected = missingHighPriority[0];
+      this.updateGoalState(selected, messageCount);
+      return selected;
+    }
+
+    // Then partial data that needs reinforcement
+    const partialGoals = userProgress.partial
+      .filter(goal => !this.hasHighResistance(goal));
+
+    if (partialGoals.length > 0) {
+      const selected = partialGoals[0];
+      this.updateGoalState(selected, messageCount);
+      return selected;
+    }
+
+    // Finally, lower priority missing goals
+    const remainingGoals = userProgress.missing
+      .filter(goal => !this.conversationState.attemptedGoals.has(goal));
+
+    if (remainingGoals.length > 0) {
+      const selected = remainingGoals[0];
+      this.updateGoalState(selected, messageCount);
+      return selected;
+    }
+
+    // All goals attempted - retry with lower resistance threshold
+    this.conversationState.attemptedGoals.clear();
+    return this.selectNextGoal(userProgress, conversationContext, messageCount);
+  }
+
+  updateGoalState(goal, messageCount) {
+    this.conversationState.currentGoal = goal;
+    this.conversationState.lastGoalSwitch = messageCount;
+    this.conversationState.attemptedGoals.add(goal);
+  }
+
+  hasHighResistance(goal) {
+    const resistance = this.conversationState.resistanceEncountered.get(goal) || 0;
+    return resistance >= 2;
+  }
+
+  // Generate natural question for goal
+  generateGoalQuestion(goal, conversationContext) {
+    const config = this.dataGoals[goal];
+    if (!config) return null;
+
+    // Select question based on context
+    const questions = config.questions;
+    const contextualQuestion = this.selectContextualQuestion(questions, conversationContext);
+
+    return {
+      question: contextualQuestion,
+      category: config.category,
+      goal: goal
+    };
+  }
+
+  selectContextualQuestion(questions, context) {
+    // Simple selection for now - can be enhanced with context matching
+    return questions[Math.floor(Math.random() * questions.length)];
+  }
+
+  // Generate bridge to goal
+  generateGoalBridge(currentTopic, targetGoal, userMessage) {
+    const transitions = {
+      work_to_attachment: "Work stress really shows what we need from our close relationships. ${question}",
+      food_to_love_language: "The way you talk about food... I'm curious - ${question}",
+      weekend_to_lifestyle: "Your weekend sounds lovely. ${question}",
+      general_to_values: "That's interesting. You know what I'm realizing? ${question}",
+      stress_to_emotional: "When life gets overwhelming like that, ${question}"
+    };
+
+    // Find matching transition
+    const transitionKey = `${currentTopic}_to_${this.dataGoals[targetGoal]?.category}`;
+    let template = transitions[transitionKey] || transitions.general_to_values;
+
+    // Insert question
+    const goalQuestion = this.generateGoalQuestion(targetGoal, userMessage);
+    return template.replace('${question}', goalQuestion.question);
+  }
+
+  // Record resistance
+  recordResistance(goal) {
+    const currentResistance = this.conversationState.resistanceEncountered.get(goal) || 0;
+    this.conversationState.resistanceEncountered.set(goal, currentResistance + 1);
+  }
+
+  // Get conversation guidance
+  getConversationGuidance(userProgress, currentTopic, resistanceDetected) {
+    const guidance = {
+      strategy: 'explore',
+      goal: this.conversationState.currentGoal,
+      approach: 'natural',
+      specificGuidance: ''
+    };
+
+    if (resistanceDetected && this.conversationState.currentGoal) {
+      this.recordResistance(this.conversationState.currentGoal);
+      guidance.strategy = 'build_trust';
+      guidance.approach = 'indirect';
+      guidance.specificGuidance = 'User seems guarded. Build rapport before returning to this topic.';
+    } else if (userProgress.completionPercentage > 80) {
+      guidance.strategy = 'deepen';
+      guidance.approach = 'reflective';
+      guidance.specificGuidance = 'We have good coverage. Focus on deepening understanding.';
+    } else if (userProgress.missing.length > 3) {
+      guidance.strategy = 'focused_collection';
+      guidance.approach = 'gentle_persistence';
+      guidance.specificGuidance = `Still need: ${userProgress.missing.join(', ')}. Stay warm but purposeful.`;
+    }
+
+    return guidance;
+  }
+
+  // Check if ready for Couple Compass
+  shouldInitiateCoupleCompass(userProgress, conversationCount, userEngagement) {
+    // Need at least 60% data before Couple Compass
+    if (userProgress.completionPercentage < 60) return false;
+
+    // Or high engagement after 8+ messages
+    if (conversationCount >= 8 && userEngagement === 'high') return true;
+
+    // Or most primary goals complete
+    const primaryComplete = userProgress.completed.filter(goal =>
+      this.dataGoals[goal].priority === 1
+    ).length;
+
+    return primaryComplete >= 2;
   }
 }
 
