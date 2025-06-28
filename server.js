@@ -1104,9 +1104,15 @@ class MatchmakerPlanner {
       return selected;
     }
 
-    // All goals attempted - retry with lower resistance threshold
-    this.conversationState.attemptedGoals.clear();
-    return this.selectNextGoal(userProgress, conversationContext, messageCount);
+    // All goals attempted - return a default goal instead of recursing
+    if (this.conversationState.attemptedGoals.size >= Object.keys(this.dataGoals).length) {
+      console.log('✅ All goals attempted - returning to values exploration');
+      this.conversationState.attemptedGoals.clear();
+      return 'values_alignment'; // Safe default goal
+    }
+
+    // If somehow we get here, return a safe default
+    return 'lifestyle_preferences';
   }
 
   updateGoalState(goal, messageCount) {
