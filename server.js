@@ -3572,6 +3572,75 @@ async function storeUserMemories(userId, memories, context) {
   }
 }
 
+// Extract matchmaking insights for a specific goal using OpenAI
+async function extractMatchmakingInsights(userMessage, aiResponse, currentGoal) {
+  const prompt = `Analyze the conversation below and extract the user's \"${currentGoal}\".\n` +
+    `Return a JSON object {"value": <string|null>, "confidence": <0-1>, "evidence": [<quotes>]}.`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: userMessage },
+          { role: 'assistant', content: aiResponse }
+        ],
+        max_tokens: 150,
+        temperature: 0.3
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Insight extraction failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return JSON.parse(data.choices[0].message.content);
+  } catch (error) {
+    console.error('Insight extraction error:', error);
+    return null;
+  }
+}
+
+// Update the user's insight map for a given goal
+async function updateUserInsightMap(userId, goal, value, confidence, evidence) {
+  const validGoals = [
+    'love_language',
+    'attachment_style',
+    'conflict_style',
+    'lifestyle_preferences',
+    'values_alignment',
+    'emotional_needs'
+  ];
+
+  if (!validGoals.includes(goal)) {
+    console.error('Invalid insight goal:', goal);
+    return;
+  }
+
+  const insightData = { value, confidence, evidence: Array.isArray(evidence) ? evidence : [evidence] };
+
+  const query = `
+    INSERT INTO user_insight_map (user_id, ${goal})
+    VALUES ($1, $2)
+    ON CONFLICT (user_id) DO UPDATE
+      SET ${goal} = $2,
+          last_updated = CURRENT_TIMESTAMP`;
+
+  try {
+    await pool.query(query, [userId, insightData]);
+  } catch (error) {
+    console.error('Error updating insight map:', error);
+  }
+}
+
 // Load user memories from database
 async function loadUserMemories(userId, limit = 20) {
   try {
