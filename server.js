@@ -5,6 +5,9 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const app = express();
 
+// Feature flags
+const ENABLE_STUCK_DETECTION = false; // Disabled - was causing false positives on normal conversation
+
 // CORS configuration
 app.use(cors({
   origin: '*',
@@ -5569,7 +5572,11 @@ app.post('/api/chat', async (req, res) => {
         conversationHistory.length
       );
 
-      if (directorCheck.isStuck || directorCheck.shouldEscalate) {
+      if (!ENABLE_STUCK_DETECTION && (directorCheck.isStuck || directorCheck.shouldEscalate)) {
+        console.log('\uD83D\uDEAB Stuck detection would have triggered but is disabled');
+      }
+
+      if (ENABLE_STUCK_DETECTION && (directorCheck.isStuck || directorCheck.shouldEscalate)) {
         // Check last AI message to prevent loops
         const lastAIMessage = messages.slice().reverse().find(m => m.role === 'assistant');
         const isAlreadyEscape = lastAIMessage?.content?.includes('going in circles') ||
