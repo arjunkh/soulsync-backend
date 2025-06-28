@@ -401,6 +401,7 @@ app.post('/api/verify-phone', async (req, res) => {
         success: false, 
         message: 'Phone number is required' 
       });
+
     }
 
     if (!userName) {
@@ -4563,11 +4564,18 @@ RESPONSE FRAMEWORK:
   assessReportReadiness(mbtiData, conversationCount) {
     const mbtiComplete = this.assessMBTICompleteness(mbtiData.mbti_confidence_scores || {});
     const coupleCompassComplete = mbtiData.couple_compass_complete || false;
-    
-    return {
+    const result = {
       ready: mbtiComplete.ready && coupleCompassComplete,
       missing: !mbtiComplete.ready ? 'personality data' : !coupleCompassComplete ? 'couple compass' : null
     };
+
+    console.log(`📊 Report Readiness Check:
+  - MBTI Complete: ${mbtiComplete.ready} (${mbtiComplete.highConfidenceDimensions}/4 dimensions)
+  - Couple Compass: ${coupleCompassComplete}
+  - Overall Ready: ${result.ready}
+`);
+
+    return result;
   }
 
   // Detect direct interest in relationships/compatibility
@@ -5311,17 +5319,21 @@ async function updateUserProfile(userId, newInsights) {
 // Save personal report
 async function savePersonalReport(userId, report) {
   try {
+    console.log(`💾 Saving report for user ${userId}...`);
+
     await pool.query(
       'INSERT INTO personal_reports (user_id, report_type, report_content) VALUES ($1, $2, $3)',
       [userId, 'personal_insight', JSON.stringify(report)]
     );
-    
+
     await pool.query(
       'UPDATE users SET report_generated = TRUE WHERE user_id = $1',
       [userId]
     );
+
+    console.log(`✅ Report saved successfully for ${userId}`);
   } catch (error) {
-    console.error('Error saving personal report:', error);
+    console.error('❌ Error saving personal report:', error);
   }
 }
 
@@ -5669,8 +5681,13 @@ app.post('/api/chat', async (req, res) => {
           three_layer_system_active: true
         },
 
-        ...coupleCompassUpdate
+      ...coupleCompassUpdate
       });
+
+      console.log(`🧠 MBTI Progress for ${userName}:
+  - Scores: ${JSON.stringify(updatedProfile.personalityData.mbti_confidence_scores)}
+  - Couple Compass Complete: ${updatedProfile.personalityData.couple_compass_complete}
+`);
 
       // Auto-progression logic
       const autoProgressCheck = {
@@ -5911,6 +5928,11 @@ app.post('/api/chat', async (req, res) => {
       
       // Generate report if ready
       let reportGenerated = false;
+      console.log(`📝 Report Generation Check for ${userName}:
+  - ready_for_report: ${JSON.stringify(analysis.ready_for_report)}
+  - user.report_generated: ${user.report_generated}
+  - Should generate: ${analysis.ready_for_report?.ready && !user.report_generated}
+`);
       if (analysis.ready_for_report?.ready && !user.report_generated) {
         const report = aria.reportGenerator.generateReport(
           user,
