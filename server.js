@@ -2481,6 +2481,26 @@ class ConversationDirector {
       progress: missionProgress
     };
   }
+
+  async analyzeConversation(userId, history, userProfile = {}) {
+    const insights = userProfile.insight_map || (await this.loadUserInsights(userId));
+    const mission = this.getCurrentMission(history.length);
+    const missionProgress = this.calculateMissionProgress(mission, insights);
+    const userProgress = this.planner.analyzeUserProgress(insights);
+    const currentGoal = this.planner.selectNextGoal(
+      userProgress,
+      history.slice(-1)[0]?.content || '',
+      history.length
+    );
+    const guidance = this.getMissionGuidance(mission, insights, Array.from(this.bannedTopics));
+
+    return {
+      guidance,
+      progress: missionProgress,
+      currentGoal,
+      userProgress
+    };
+  }
 }
 
 // PHASE 2.2: MBTI Scenario Engine - Dynamic Psychology Detection
@@ -5189,13 +5209,22 @@ app.post('/api/chat', async (req, res) => {
       
       // Enhanced analysis with PRD features
       const analysis = aria.analyzeMessage(
-        latestUserMessage.content, 
-        conversationHistory, 
+        latestUserMessage.content,
+        conversationHistory,
         currentIntimacyLevel,
         conversationCount,
         user.personality_data || {},
         coupleCompassState?.active || false
       );
+
+      const directorResults = await aria.conversationDirector.analyzeConversation(
+        userId,
+        [...conversationHistory, latestUserMessage],
+        user
+      );
+      analysis.directorAnalysis = directorResults;
+      analysis.currentGoal = directorResults.currentGoal;
+      analysis.userProgress = directorResults.userProgress;
 
       // Extract specific mentions
       const specificMentions = extractSpecificMentions(latestUserMessage.content);
@@ -5498,6 +5527,23 @@ app.post('/api/chat', async (req, res) => {
       }
 
       const data = await response.json();
+
+      if (directorResults.currentGoal) {
+        const insight = await extractMatchmakingInsights(
+          latestUserMessage.content,
+          data.choices[0].message.content,
+          directorResults.currentGoal
+        );
+        if (insight) {
+          await updateUserInsightMap(
+            userId,
+            directorResults.currentGoal,
+            insight.value,
+            insight.confidence,
+            insight.evidence
+          );
+        }
+      }
       
       // Generate report if ready
       let reportGenerated = false;
