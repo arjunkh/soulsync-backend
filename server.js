@@ -5900,6 +5900,42 @@ app.get('/api/user-insights/:userId', async (req, res) => {
   }
 });
 
+// Get user matchmaking progress and readiness
+app.get('/api/user-progress/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const insightResult = await pool.query(
+      'SELECT * FROM user_insight_map WHERE user_id = $1',
+      [userId]
+    );
+
+    if (insightResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const insightMap = insightResult.rows[0];
+    const planner = new MatchmakerPlanner();
+    const progress = planner.analyzeUserProgress(insightMap);
+
+    const userResult = await pool.query(
+      'SELECT personality_data FROM users WHERE user_id = $1',
+      [userId]
+    );
+    const personalityData = userResult.rows[0]?.personality_data || {};
+    const readiness = assessMatchingReadiness(personalityData);
+
+    res.json({
+      userId,
+      progress,
+      readiness
+    });
+  } catch (error) {
+    console.error('Error getting user progress:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Test life stage logic
 app.get('/api/test-life-stage/:age', async (req, res) => {
   const age = parseInt(req.params.age);
