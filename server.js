@@ -1073,46 +1073,27 @@ class MatchmakerPlanner {
       return this.conversationState.currentGoal;
     }
 
-    // Priority: missing high-priority goals first
-    const missingHighPriority = userProgress.missing
-      .filter(goal => this.dataGoals[goal].priority === 1)
-      .filter(goal => !this.conversationState.attemptedGoals.has(goal));
+    // Filter out completed goals
+    const completedGoals = new Set([
+      ...userProgress.completed,
+      ...this.conversationState.completedGoals
+    ]);
 
-    if (missingHighPriority.length > 0) {
-      const selected = missingHighPriority[0];
-      this.updateGoalState(selected, messageCount);
-      return selected;
+    // Don't select goals we've already collected
+    const availableGoals = Object.keys(this.dataGoals)
+      .filter(goal => !completedGoals.has(goal));
+
+    if (availableGoals.length === 0) {
+      // All goals complete - trigger Couple Compass
+      return 'initiate_couple_compass';
     }
 
-    // Then partial data that needs reinforcement
-    const partialGoals = userProgress.partial
-      .filter(goal => !this.hasHighResistance(goal));
+    // Select highest priority uncompleted goal
+    const priorityGoal = availableGoals
+      .sort((a, b) => this.dataGoals[a].priority - this.dataGoals[b].priority)[0];
 
-    if (partialGoals.length > 0) {
-      const selected = partialGoals[0];
-      this.updateGoalState(selected, messageCount);
-      return selected;
-    }
-
-    // Finally, lower priority missing goals
-    const remainingGoals = userProgress.missing
-      .filter(goal => !this.conversationState.attemptedGoals.has(goal));
-
-    if (remainingGoals.length > 0) {
-      const selected = remainingGoals[0];
-      this.updateGoalState(selected, messageCount);
-      return selected;
-    }
-
-    // All goals attempted - return a default goal instead of recursing
-    if (this.conversationState.attemptedGoals.size >= Object.keys(this.dataGoals).length) {
-      console.log('✅ All goals attempted - returning to values exploration');
-      this.conversationState.attemptedGoals.clear();
-      return 'values_alignment'; // Safe default goal
-    }
-
-    // If somehow we get here, return a safe default
-    return 'lifestyle_preferences';
+    this.updateGoalState(priorityGoal, messageCount);
+    return priorityGoal;
   }
 
   updateGoalState(goal, messageCount) {
@@ -1213,6 +1194,60 @@ class MatchmakerPlanner {
     ).length;
 
     return primaryComplete >= 2;
+  }
+}
+
+// Topic closure tracking system
+class TopicTracker {
+  constructor() {
+    this.closedTopics = {
+      love_language: ['love language', 'acts of service', 'quality time', 'physical touch', 'words of affirmation', 'gifts'],
+      values: ['values', 'important', 'matters most', 'kindness', 'empathy', 'intelligence'],
+      support_style: ['support', 'help', 'there for', 'show up'],
+      conflict: ['disagreement', 'conflict', 'argue', 'fight'],
+      lifestyle: ['weekend', 'free time', 'hobbies', 'interests'],
+      family: ['family', 'parents', 'children', 'kids']
+    };
+  }
+
+  isTopicClosed(userData, topic) {
+    switch(topic) {
+      case 'love_language':
+        return userData.love_language_hints?.length > 0;
+      case 'values':
+        return userData.values_discovered?.length >= 3 || userData.user_preferences?.values;
+      case 'support_style':
+        return userData.support_style_captured || userData.user_preferences?.support_style;
+      case 'conflict':
+        return userData.conflict_style || userData.couple_compass_data?.conflict_style;
+      case 'lifestyle':
+        return userData.interests?.length >= 3;
+      case 'family':
+        return userData.family_values_hints?.length > 0;
+      default:
+        return false;
+    }
+  }
+
+  getClosedTopics(userData) {
+    return Object.keys(this.closedTopics).filter(topic => 
+      this.isTopicClosed(userData, topic)
+    );
+  }
+
+  shouldAskAboutTopic(userData, message) {
+    const msg = message.toLowerCase();
+    
+    for (const [topic, keywords] of Object.entries(this.closedTopics)) {
+      if (this.isTopicClosed(userData, topic)) {
+        // Check if message contains any keywords from closed topic
+        if (keywords.some(keyword => msg.includes(keyword))) {
+          return { ask: false, topic, reason: 'already_captured' };
+        }
+      }
+    }
+    
+    return { ask: true };
   }
 }
 
@@ -3941,23 +3976,49 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
 
   generateContextualResponse(userMessage, analysis) {
     const msg = userMessage.toLowerCase();
+    const userData = analysis.userProfile?.personality_data || {};
 
-    // Special handling for meaningful shares
-    if (msg.includes('20') && msg.includes('80')) {
+    // Topic tracker
+    const topicTracker = new TopicTracker();
+
+    // Handle "already told you" with specific acknowledgment
+    if (msg.includes('already mentioned') || msg.includes('already told') || 
+        msg.includes('going on loop') || msg.includes('asked this')) {
+      
+      const closedTopics = topicTracker.getClosedTopics(userData);
+      const knownFacts = [];
+      
+      if (userData.love_language_hints?.length > 0) {
+        knownFacts.push(`${userData.love_language_hints[0]} is your love language`);
+      }
+      if (userData.values_discovered?.length > 0) {
+        knownFacts.push(`you value ${userData.values_discovered.join(', ')}`);
+      }
+      
       return {
-        priority: 'acknowledge_wisdom',
-        template: "That 20/80 perspective is beautiful - recognizing that support flows differently on different days. What kind of support means the most when you're at your 20%?"
+        priority: 'acknowledge_repetition',
+        template: `You're absolutely right, I apologize. I have noted that ${knownFacts.join(' and ')}. Since I understand these core things about you, would you like to try the Couple Compass assessment? It'll help me find your perfect match.`
+      };
+    }
+    
+    // Check if asking about closed topic
+    const topicCheck = topicTracker.shouldAskAboutTopic(userData, msg);
+    if (!topicCheck.ask) {
+      return {
+        priority: 'skip_closed_topic',
+        template: `I already know about your ${topicCheck.topic}. Let's explore something new or move to the Couple Compass assessment.`
+      };
+    }
+    
+    // Handle direct progression requests
+    if (msg.includes('find someone') || msg.includes('find my match') || 
+        msg.includes('ready') || msg.includes('lets do')) {
+      return {
+        priority: 'direct_compass_request',
+        template: `Great! Let's start the Couple Compass - it's a quick assessment that helps me understand your relationship preferences. Ready to begin?`
       };
     }
 
-    if (msg.includes('kindness') && msg.includes('love') && msg.includes('partnership')) {
-      return {
-        priority: 'acknowledge_values',
-        template: "Those three qualities paint such a clear picture of what you need - genuine care within true partnership. How do you know when someone really sees you as a partner?"
-      };
-    }
-
-    // Return null to use normal flow
     return null;
   }
 
@@ -4375,81 +4436,108 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
 
   // Generate system prompt focused on mission progress
   async generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
-    const { mood, energy, resistance_signals, off_topic, directorAnalysis } = userAnalysis;
+    const { mood, energy, resistance_signals, off_topic } = userAnalysis;
     const personalityData = userProfile.personality_data || {};
     const userName = user?.user_name || 'there';
 
-    // Load user memories for natural reference
-    const memories = await loadUserMemories(user.user_id, 5);
-    const memoryContext = memories.length > 0 ? 
-      `\nRecent memories about ${userName}: ${memories.map(m => m.memory).join(', ')}` : '';
+    // Initialize topic tracker
+    const topicTracker = new TopicTracker();
+    const closedTopics = topicTracker.getClosedTopics(personalityData);
 
-    let prompt = `You are Aria, a warm and professional matchmaker. Your personality is curious, caring, and insightful - like a friend who happens to be brilliant at understanding relationships.
+    // Build comprehensive known information
+    const knownInfo = [];
 
-THE 3A RULE (Always follow):
-1. ACKNOWLEDGE - Validate what they shared
-2. ADD - Share a matchmaking insight (not personal story)  
-3. ASK - Natural follow-up about their relationship needs
+    // Extract ALL captured data dynamically
+    if (personalityData.love_language_hints?.length > 0) {
+      knownInfo.push(`Love language: ${personalityData.love_language_hints[0]}`);
+    }
 
-PERSONALITY:
-- Warm and curious, never cold or robotic
-- Professional matchmaker, not flirty
-- You see their story as the key to finding their match
-- Keep responses to 2-3 sentences maximum
+    if (personalityData.user_preferences) {
+      Object.entries(personalityData.user_preferences).forEach(([key, value]) => {
+        if (value && key !== 'userId') {
+          knownInfo.push(`${key.replace(/_/g, ' ')}: ${value}`);
+        }
+      });
+    }
 
-CURRENT CONTEXT:
-- User: ${userName}
-- Message #${conversationHistory.length + 1}
+    if (personalityData.attachment_hints?.length > 0) {
+      knownInfo.push(`Attachment style: ${personalityData.attachment_hints[0]}`);
+    }
+
+    if (personalityData.values_discovered?.length > 0) {
+      knownInfo.push(`Core values: ${personalityData.values_discovered.join(', ')}`);
+    }
+
+    // Load from insight map
+    try {
+      const insightResult = await pool.query(
+        'SELECT * FROM user_insight_map WHERE user_id = $1',
+        [user.user_id]
+      );
+
+      if (insightResult.rows.length > 0) {
+        const insights = insightResult.rows[0];
+        Object.entries(insights).forEach(([key, data]) => {
+          if (data?.value && key !== 'user_id' && key !== 'last_updated') {
+            knownInfo.push(`${key.replace(/_/g, ' ')}: ${data.value}`);
+          }
+        });
+      }
+    } catch (err) {
+      console.log('Could not load insights:', err);
+    }
+
+    // Calculate readiness for next steps
+    const dataCompleteness = {
+      hasLoveLanguage: personalityData.love_language_hints?.length > 0,
+      hasValues: personalityData.values_discovered?.length >= 2,
+      hasLifestyle: personalityData.interests?.length >= 2,
+      hasAttachment: personalityData.attachment_hints?.length > 0,
+      messageCount: conversationHistory.length + 1
+    };
+
+    const readyForCompass = Object.values(dataCompleteness).filter(Boolean).length >= 3 && 
+                            dataCompleteness.messageCount >= 6;
+
+    let prompt = `You are Aria, a warm and professional matchmaker helping ${userName} find their perfect match.
+
+CONVERSATION STATUS:
+- Message #${dataCompleteness.messageCount}
 - Mood: ${mood}
+- Data collected: ${Object.values(dataCompleteness).filter(Boolean).length}/5 core areas
+
+${knownInfo.length > 0 ? `
+WHAT YOU ALREADY KNOW (NEVER ASK ABOUT THESE):
+${knownInfo.map(info => `✓ ${info}`).join('\n')}
+
+CLOSED TOPICS (DO NOT EXPLORE):
+${closedTopics.map(topic => `✗ ${topic}`).join('\n')}
+` : 'Still learning about this user.'}
+
+YOUR MISSION:
+${readyForCompass ? 
+  '🎯 INVITE TO COUPLE COMPASS - You have enough data!' : 
+  `📊 Collect missing data: Focus on ${dataCompleteness.hasLoveLanguage ? '' : 'love language, '}${dataCompleteness.hasValues ? '' : 'core values, '}${dataCompleteness.hasLifestyle ? '' : 'lifestyle preferences'}`
+}
 
 CRITICAL RULES:
-- When someone shares something meaningful (like "relationships are 20/80"), you MUST acknowledge it warmly
-- Use bridge patterns to naturally guide conversation toward relationship topics
-- Never repeat questions or get stuck in loops
-- If they share values about relationships, recognize and build on them
+1. NEVER ask about anything marked with ✓ above
+2. If ${userName} says "already told you" → apologize and move forward
+3. If you have 3+ core insights → invite to Couple Compass
+4. Keep responses 2-3 sentences max
+5. Be warm and natural, not robotic
 
-EXAMPLES OF GOOD RESPONSES:
-- User: "kindness, love and feeling of partnership"
-  You: "Those qualities tell me so much about what you need - a nurturing environment with real partnership. What does that partnership look like day-to-day for you?"
-
-- User: "It's not 50/50 all days but the attempt to make it 100 matters"  
-  You: "That's such a beautiful way to see partnership - the ebb and flow of support. When you're at your 20%, what kind of support helps you most?"
-
-Remember: You're having a real conversation about what matters most in life - love and connection.`;
-
-    // Add specific guidance based on analysis
-    if (resistance_signals?.detected) {
-      prompt += `\n\n${userName} seems guarded. Build trust with gentle, non-invasive questions. Focus on their comfort.`;
-    }
-
-    if (off_topic?.detected) {
-      prompt += `\n\n${userName} went off-topic. Gently redirect to relationships using the bridge patterns.`;
-    }
+RESPONSE FRAMEWORK:
+- Acknowledge what they shared
+- Reference something you already know about them
+- Either ask about something NEW or invite to next step`;
 
     // Add Couple Compass context if active
     if (coupleCompassState?.active || gameState?.active) {
       const questionIndex = gameState?.questionIndex || coupleCompassState?.questionIndex || 0;
       const questionText = getCoupleCompassQuestionText(questionIndex);
 
-      prompt += `\n\nCOUPLE COMPASS ASSESSMENT ACTIVE:
-  
-You are administering question ${questionIndex + 1} of 6 in the Couple Compass assessment.
-
-CRITICAL INSTRUCTIONS:
-1. Present EXACTLY this question with proper formatting:
-"${questionText}"
-
-2. Ensure each option appears on a separate line
-3. Do not add any additional text or commentary
-4. Simply present the question and wait for their A/B/C/D response
-      5. Maintain professional, warm tone as their matchmaker`;
-    }
-
-    if (this.conversationDirector?.generateSmartPromptAddition && directorAnalysis) {
-      const addition = this.conversationDirector.generateSmartPromptAddition(directorAnalysis);
-      if (addition) {
-        prompt += `\n${addition}`;
-      }
+      prompt += `\n\nCOUPLE COMPASS ACTIVE: Present question ${questionIndex + 1}/6`;
     }
 
     return prompt;
@@ -5122,6 +5210,7 @@ async function updateUserProfile(userId, newInsights) {
     }
 
     const conversationCount = newInsights.conversation_flow?.conversation_count || currentData.conversation_flow?.conversation_count || 0;
+    const message = newInsights.raw_message || '';
 
     // Merge new insights with existing data
     let updatedData = {
@@ -5132,7 +5221,7 @@ async function updateUserProfile(userId, newInsights) {
       love_language_hints: [...new Set([...(currentData.love_language_hints || []), ...(newInsights.love_language_hints || [])])],
       attachment_hints: [...new Set([...(currentData.attachment_hints || []), ...(newInsights.attachment_hints || [])])],
       family_values_hints: [...new Set([...(currentData.family_values_hints || []), ...(newInsights.family_values_hints || [])])],
-      
+
       // Store user preferences properly
       user_preferences: userPreferences,
       
@@ -5147,6 +5236,36 @@ async function updateUserProfile(userId, newInsights) {
       // Couple Compass completion tracking
       couple_compass_complete: newInsights.couple_compass_complete || currentData.couple_compass_complete || false
     };
+
+    // Enhanced value extraction from messages
+    if (newInsights.interests?.includes('relationships')) {
+      const valueKeywords = {
+        kindness: ['kind', 'kindness', 'caring', 'gentle'],
+        intelligence: ['smart', 'intelligent', 'intellectual', 'clever'],
+        emotional_support: ['support', 'there for me', 'showing up', 'emotional'],
+        empathy: ['empathy', 'understanding', 'empathetic', 'understands'],
+        loyalty: ['loyal', 'loyalty', 'faithful', 'committed']
+      };
+
+      const discoveredValues = [];
+      Object.entries(valueKeywords).forEach(([value, keywords]) => {
+        if (keywords.some(keyword => message.toLowerCase().includes(keyword))) {
+          discoveredValues.push(value);
+        }
+      });
+
+      if (discoveredValues.length > 0) {
+        updatedData.values_discovered = [
+          ...new Set([...(currentData.values_discovered || []), ...discoveredValues])
+        ];
+      }
+    }
+
+    // Mark support style if discussed
+    if (message && message.toLowerCase().includes('support') && 
+        (message.includes('emotional') || message.includes('financial') || message.includes('showing up'))) {
+      updatedData.support_style_captured = true;
+    }
 
     // ADD mission progress tracking
     const missionProgress = {
@@ -5280,6 +5399,7 @@ app.post('/api/chat', async (req, res) => {
     // Get or create user profile
     const user = await getOrCreateUser(userId);
     const conversationHistory = await getUserConversationHistory(userId);
+    const userName = user?.user_name || 'there';
     
     const aria = new AriaPersonality();
     const coupleCompass = aria.coupleCompass; // Access the game instance
@@ -5475,13 +5595,14 @@ app.post('/api/chat', async (req, res) => {
       const updatedProfile = await updateUserProfile(userId, {
         interests: analysis.interests,
         specific_mentions: analysis.specific_mentions,
+        raw_message: latestUserMessage.content,
         communication_patterns: {
           style: analysis.communication_style,
           story_sharing_level: analysis.story_sharing_level,
           emotional_openness: analysis.emotional_openness
         },
-        emotional_patterns: { 
-          latest_mood: analysis.mood, 
+        emotional_patterns: {
+          latest_mood: analysis.mood,
           latest_energy: analysis.energy,
           emotional_needs: analysis.emotional_needs,
           intimacy_signals: analysis.intimacy_signals
@@ -5489,7 +5610,7 @@ app.post('/api/chat', async (req, res) => {
         love_language_hints: analysis.love_language_hints,
         attachment_hints: analysis.attachment_hints,
         family_values_hints: analysis.family_values_hints,
-        
+
         // MBTI fusion analysis
         mbti_analysis: analysis.mbti_analysis,
         mbti_fusion: analysis.mbti_analysis?.fusion_results || null,
@@ -5506,6 +5627,55 @@ app.post('/api/chat', async (req, res) => {
 
         ...coupleCompassUpdate
       });
+
+      // Auto-progression logic
+      const autoProgressCheck = {
+        hasEnoughData: false,
+        readyForCompass: false,
+        shouldInvite: false
+      };
+
+      // Count what we actually know
+      const knowledgeScore = {
+        loveLanguage: (updatedProfile.personalityData.love_language_hints?.length > 0) ? 1 : 0,
+        values: (updatedProfile.personalityData.values_discovered?.length >= 2) ? 1 : 0,
+        attachment: (updatedProfile.personalityData.attachment_hints?.length > 0) ? 1 : 0,
+        lifestyle: (updatedProfile.personalityData.interests?.length >= 2) ? 1 : 0,
+        support: (updatedProfile.personalityData.user_preferences?.support_style) ? 1 : 0
+      };
+
+      const totalKnowledge = Object.values(knowledgeScore).reduce((a, b) => a + b, 0);
+      autoProgressCheck.hasEnoughData = totalKnowledge >= 3;
+      autoProgressCheck.readyForCompass = autoProgressCheck.hasEnoughData && 
+                                         conversationHistory.length >= 5 &&
+                                         !updatedProfile.personalityData.couple_compass_complete;
+
+      // Force Couple Compass invitation if ready
+      if (autoProgressCheck.readyForCompass && !coupleCompassState?.active) {
+        console.log(`🎯 Auto-triggering Couple Compass for ${userName} - Knowledge score: ${totalKnowledge}/5`);
+
+        // Build personalized invitation
+        const knownTraits = [];
+        if (knowledgeScore.loveLanguage) knownTraits.push('how you express love');
+        if (knowledgeScore.values) knownTraits.push('what you value most');
+        if (knowledgeScore.lifestyle) knownTraits.push('your lifestyle');
+
+        const compassInvite = `${userName}, I've really enjoyed learning about ${knownTraits.join(', ')}. I think I understand enough about what you're looking for to take the next step. Would you like to try the Couple Compass? It's a quick compatibility assessment that will help me find your perfect match.`;
+
+        return res.json({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: compassInvite
+            }
+          }],
+          userInsights: {
+            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+            autoProgressTriggered: true,
+            readyForMatching: true
+          }
+        });
+      }
 
       const contextualResponse = aria.generateContextualResponse(
         latestUserMessage.content,
