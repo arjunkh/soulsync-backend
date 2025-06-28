@@ -5415,8 +5415,18 @@ app.post('/api/chat', async (req, res) => {
 
     // Get or create user profile
     const user = await getOrCreateUser(userId);
-    const conversationHistory = await getUserConversationHistory(userId);
     const userName = user?.user_name || 'there';
+
+    console.log(`📋 User Data Check for ${userName}:
+      - Love Language: ${JSON.stringify(user.personality_data?.love_language_hints)}
+      - Attachment: ${JSON.stringify(user.personality_data?.attachment_hints)}
+      - Values: ${JSON.stringify(user.personality_data?.values_discovered)}
+      - Interests: ${JSON.stringify(user.personality_data?.interests)}
+      - Couple Compass Answers: ${Object.keys(user.couple_compass_data || {}).length}/6
+      - Total Insights: ${user.personality_data?.conversation_count || 0}
+    `);
+
+    const conversationHistory = await getUserConversationHistory(userId);
 
     // Check if user already completed Couple Compass
     const hasCompletedCoupleCompass = user.personality_data?.couple_compass_complete || false;
