@@ -917,10 +917,10 @@ class CoupleCompass {
           { value: 'flexible', text: 'Wherever love leads', emoji: '💕' }
         ],
         responses: {
-          'with_parents': "Family is clearly everything to you. That's beautiful - the kind of closeness that builds strong foundations.",
-          'near_parents': "You're deeply rooted, but you also need your own space to breathe and grow. I respect that balance.",
-          'new_city': "Adventure calls to you! Starting fresh with your person, writing your own story... that's brave.",
-          'flexible': "You're led by love, not location. That kind of openness? It's rare and beautiful."
+          'with_parents': "Family is clearly central to your vision of love. That closeness often creates the strongest foundations.",
+          'near_parents': "You value both roots and independence. That balance shows emotional maturity.",
+          'new_city': "Adventure and fresh starts appeal to you. You'll need a partner who shares that pioneering spirit.",
+          'flexible': "Love leads, location follows. That openness to life's possibilities is attractive to the right person."
         }
       },
       {
@@ -934,10 +934,10 @@ class CoupleCompass {
           { value: 'emotional', text: 'I contribute more emotionally', emoji: '💝' }
         ],
         responses: {
-          'provider': "There's something deeply caring about wanting to provide. It's not about control - it's about creating safety for someone you love.",
-          'lead_share': "You want to lead but not alone. That's partnership - sharing the weight, not just the rewards.",
-          'equal': "Equal partners, equal investment. You see relationships as a true collaboration. I love that energy.",
-          'emotional': "You understand that contribution isn't just financial. Emotional labor is real labor. That's wisdom."
+          'provider': "Your desire to provide comes from a caring place. It can create a strong sense of security in a relationship.",
+          'lead_share': "You see partnership as shared responsibility, even if you take the lead. That approach often fosters respect.",
+          'equal': "Equality and fairness are core to you. You envision a true collaboration in love.",
+          'emotional': "You recognize that support isn't only financial. Valuing emotional contribution shows great awareness."
         }
       },
       {
@@ -951,10 +951,10 @@ class CoupleCompass {
           { value: 'no', text: 'No, and I\'m clear on that', emoji: '✨' }
         ],
         responses: {
-          'yes_involved': "You're going to be the parent who knows every teacher's name and never misses a game. That dedication? Your kids will feel so loved.",
-          'yes_support': "You know yourself well enough to know you'll need help. That's not weakness - that's setting everyone up for success.",
-          'maybe': "You're keeping your options open. Smart - this isn't a decision to rush. When you know, you'll know.",
-          'no': "You know what you want (or don't want) and you own it. That clarity? It's actually really attractive."
+          'yes_involved': "You want to be fully present as a parent. That dedication will mean a lot to your future family.",
+          'yes_support': "You know parenting takes a village. Being honest about needing help shows maturity.",
+          'maybe': "You're still exploring how children fit into your life. Taking time with that decision is wise.",
+          'no': "You're clear that parenting isn't for you. Owning that choice will lead to the right match."
         }
       },
       {
@@ -968,10 +968,10 @@ class CoupleCompass {
           { value: 'avoid', text: 'I tend to avoid conflict', emoji: '🤐' }
         ],
         responses: {
-          'talk_out': "You don't let things fester. That direct communication? It's brave and it builds trust.",
-          'need_space': "You know you need to cool down before you can be fair. That's emotional intelligence right there.",
-          'mediator': "Sometimes we need that outside perspective. Knowing when to ask for help is a strength.",
-          'avoid': "Conflict is hard for you. I get it. Just remember - the right person will make it safe to disagree."
+          'talk_out': "Addressing issues directly builds trust and prevents resentment.",
+          'need_space': "Taking space before talking can be a healthy way to process emotions.",
+          'mediator': "Seeking a neutral perspective shows you're open to growth.",
+          'avoid': "Avoiding conflict can be protective, but the right partner will help you feel safe discussing tough topics."
         }
       },
       {
@@ -985,10 +985,10 @@ class CoupleCompass {
           { value: 'simple_life', text: 'Simple, quiet life is the dream', emoji: '🌿' }
         ],
         responses: {
-          'high_ambition': "You're going places and you know it. Your person better be ready for the adventure!",
-          'balanced': "Success without sacrificing your soul. You've figured out what most people spend decades learning.",
-          'family_first': "You know where your heart is. Building a loving home is your kind of empire.",
-          'simple_life': "In a world that screams 'more,' you choose 'enough.' That's not settling - that's wisdom."
+          'high_ambition': "You have big goals and need a partner who supports that drive.",
+          'balanced': "You strive for success without losing balance. A partner who shares that perspective will resonate with you.",
+          'family_first': "Family and peace are your priorities. You'd thrive with someone who values the same.",
+          'simple_life': "A simple, quiet life appeals to you. Many people seek that stability and contentment."
         }
       },
       {
@@ -1002,10 +1002,10 @@ class CoupleCompass {
           { value: 'flexible', text: "Love makes me flexible", emoji: '💕' }
         ],
         responses: {
-          'discuss': "You don't run from differences - you lean in. That's the stuff lasting relationships are made of.",
-          'unsure': "It would shake you a bit. That's honest. The right person will give you time to process.",
-          'mismatch': "You know your non-negotiables. That's not rigid - that's self-aware.",
-          'flexible': "Love makes you bendy! Just make sure you're bending, not breaking, for the right person."
+          'discuss': "Open dialogue about differences can strengthen understanding.",
+          'unsure': "Feeling unsure is natural when values clash. Taking time to reflect is wise.",
+          'mismatch': "Knowing your dealbreakers helps you stay true to yourself.",
+          'flexible': "Flexibility can keep love strong, as long as it doesn't compromise your core values."
         }
       }
     ];
@@ -3393,6 +3393,9 @@ class AriaPersonality {
     // Mission-based conversation system
     this.conversationDirector = new ConversationDirector();
     this.missionMode = true; // Enable mission-based conversations
+
+    // Bridge generator for natural transitions
+    this.bridgeGenerator = new BridgeGenerator();
   }
 
   // Generate warm, flirty introduction for new users
@@ -3544,6 +3547,20 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     const topicDepth = this.calculateTopicDepth(currentTopic, userHistory);
     const shouldSwitch = topicDepth >= 3;
 
+    // Generate appropriate bridge if needed
+    let suggestedBridge = null;
+    if (this.bridgeGenerator.shouldBridge(
+      conversationCount,
+      previousMBTIData.last_bridge_count || 0,
+      currentTopic,
+      baseAnalysis.emotional_openness
+    )) {
+      suggestedBridge = this.bridgeGenerator.generateBridge(
+        message,
+        baseAnalysis.mbti_needs?.priority_dimension
+      );
+    }
+
     // Determine next question and guidance
     let nextQuestion;
     let conversationGuidance;
@@ -3584,7 +3601,8 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
       should_switch_topic: shouldSwitch,
       conversation_guidance: conversationGuidance,
       next_question_suggestion: nextQuestion,
-      ready_for_report: readyForReport
+      ready_for_report: readyForReport,
+      suggested_bridge: suggestedBridge
     };
   }
 
@@ -3904,43 +3922,66 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
 
   // Generate system prompt focused on mission progress
   async generateSystemPrompt(userAnalysis, userProfile, conversationHistory, user, coupleCompassState = null, gameState = null) {
-    // Get mission guidance from director
-    const directorAnalysis = this.conversationDirector.assessConversation(
-      conversationHistory,
-      user,
-      conversationHistory.length
-    );
-
     const { mood, energy, resistance_signals, off_topic } = userAnalysis;
     const personalityData = userProfile.personality_data || {};
-    const coupleCompassData = userProfile.couple_compass_data || {};
+    const userName = user?.user_name || 'there';
 
-    let prompt = `You are Aria, ${user?.user_name || 'babe'}'s personal MATCHMAKER (not just a friend).
+    // Load user memories for natural reference
+    const memories = await loadUserMemories(user.user_id, 5);
+    const memoryContext = memories.length > 0 ? 
+      `\nRecent memories about ${userName}: ${memories.map(m => m.memory).join(', ')}` : '';
 
-🎯 YOUR MISSION: ${directorAnalysis.currentMission.goal}
-📊 Progress: ${directorAnalysis.missionProgress.percentage}% complete
-🚫 BANNED TOPICS: ${directorAnalysis.bannedTopics.join(', ') || 'none yet'}
+    let prompt = `You are Aria, a warm and professional matchmaker. Your role is to understand ${userName} deeply to find their ideal match.
 
-💕 YOUR JOB: Efficiently gather matchmaking data while being charming.
+PERSONALITY GUIDELINES:
+- You are warm, curious, and emotionally intelligent
+- You are NEVER flirty or romantic with the user
+- You maintain professional boundaries while being caring
+- You see their story as the key to finding their perfect match
 
-CURRENT OBJECTIVE: ${directorAnalysis.currentMission.name}
-REQUIRED DATA: ${directorAnalysis.currentMission.requiredData.join(', ')}
-CONVERSATION COUNT: ${conversationHistory.length}
+CONVERSATION PRINCIPLES:
+- Curiosity over checklist: Ask naturally flowing questions
+- Reflection over interrogation: Mirror and validate their experiences  
+- Intentional nudges over hard pivots: Guide gently back to relationships
+- Professional warmth: Caring but not flirty
 
-🎭 STYLE RULES:
-- 2-3 sentences MAX per response
-- ALWAYS transition after 3 messages on any topic
-- If collecting data about ${directorAnalysis.currentMission.targetMBTI}, ask targeted questions
-- Acknowledge user's last message, then pivot to mission goal`;
+CURRENT CONTEXT:
+- User mood: ${mood}
+- Energy level: ${energy}
+- Conversation #${conversationHistory.length + 1}${memoryContext}
 
-    if (directorAnalysis.isStuck) {
-      prompt += `\n\n🚨 CONVERSATION STUCK: ${directorAnalysis.stuckReason}
-IMMEDIATELY SAY: "${this.conversationDirector.generateEscapeMessage(directorAnalysis.stuckReason)}"`;
+YOUR CURRENT FOCUS:
+Help ${userName} explore their relationship needs through natural conversation. When they share something, use it as a bridge to understand their partnership preferences.
+
+RESPONSE GUIDELINES:
+1. Keep responses to 2-3 sentences maximum
+2. Use the 3A framework: Acknowledge, Add insight, Ask naturally
+3. Reference their story to show you're listening
+4. Use bridge phrases like:
+   - "That tells me a lot about what you need..."
+   - "I'm getting a sense of your ideal partnership..."
+   - "This helps me understand what would make you happy..."
+
+IMPORTANT: Never be flirty. Always maintain professional matchmaker boundaries.`;
+
+    // Add specific guidance based on analysis
+    if (resistance_signals?.detected) {
+      prompt += `\n\n${userName} seems guarded. Build trust with gentle, non-invasive questions. Focus on their comfort.`;
     }
 
-    if (directorAnalysis.shouldEscalate) {
-      prompt += `\n\n🧭 TIME FOR COUPLE COMPASS!
-Introduce it naturally: "I'm getting such a good picture of who you are! Ready for something fun? Let's do Couple Compass - it's a quick tool that helps me understand exactly what you're looking for in love."`;
+    if (off_topic?.detected) {
+      prompt += `\n\n${userName} went off-topic. Gently redirect to relationships using the bridge patterns.`;
+    }
+
+    // Add Couple Compass context if active
+    if (coupleCompassState?.active || gameState?.active) {
+      const questionText = gameState?.exactQuestionText || 
+        getCoupleCompassQuestionText(gameState?.questionIndex || coupleCompassState?.questionIndex);
+      
+      prompt += `\n\nCOUPLE COMPASS ACTIVE:
+You're currently asking question ${(gameState?.questionIndex || coupleCompassState?.questionIndex) + 1} of 6.
+Ask EXACTLY this question: "${questionText}"
+Do not add anything else. Wait for their A/B/C/D response.`;
     }
 
     return prompt;
@@ -4293,34 +4334,38 @@ Introduce it naturally: "I'm getting such a good picture of who you are! Ready f
   // Detect moments worthy of celebration
   detectCelebrationMoment(message) {
     const msg = message.toLowerCase();
-    
+
     // Love language discovery
-    if (msg.includes('quality time') || msg.includes('physical touch') || 
-        msg.includes('acts of service') || msg.includes('words of affirmation') || 
-        msg.includes('gifts') || msg.includes('that\'s exactly') || 
-        msg.includes('you got it') || msg.includes('that\'s me')) {
-      return { type: 'love_language_discovery', confidence: 'high' };
-    }
-    
-    // Personality insight
-    if (msg.includes('exactly') || msg.includes('that\'s so me') || 
-        msg.includes('spot on') || msg.includes('how did you know')) {
-      return { type: 'personality_insight', confidence: 'high' };
-    }
-    
-    // Emotional breakthrough
-    if (msg.includes('never told anyone') || msg.includes('first time') ||
-        msg.includes('feels good to share') || msg.includes('understand me')) {
-      return { type: 'emotional_breakthrough', confidence: 'medium' };
+    if (msg.includes('quality time') || msg.includes('physical touch') ||
+        msg.includes('acts of service') || msg.includes('words of affirmation') ||
+        msg.includes('gifts')) {
+      return {
+        type: 'love_language_discovery',
+        confidence: 'high',
+        response: "Yes! Understanding your love language is crucial for finding the right match."
+      };
     }
 
-    // MBTI discovery celebration
-    if (msg.includes('introvert') || msg.includes('extrovert') || 
-        msg.includes('thinking') || msg.includes('feeling') ||
-        msg.includes('that describes me') || msg.includes('so accurate')) {
-      return { type: 'mbti_discovery', confidence: 'high' };
+    // Personality insight
+    if (msg.includes('exactly') || msg.includes("that's me") ||
+        msg.includes('spot on')) {
+      return {
+        type: 'personality_insight',
+        confidence: 'high',
+        response: "I'm glad that resonates! This self-awareness will help me find your perfect match."
+      };
     }
-    
+
+    // Emotional breakthrough
+    if (msg.includes('never told anyone') || msg.includes('first time') ||
+        msg.includes('feels good to share')) {
+      return {
+        type: 'emotional_breakthrough',
+        confidence: 'medium',
+        response: "Thank you for trusting me with this. It really helps me understand what you need."
+      };
+    }
+
     return null;
   }
 
