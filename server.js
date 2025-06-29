@@ -1218,10 +1218,13 @@ class TopicTracker {
         result = userData.love_language_hints?.length > 0;
         break;
       case 'values':
-        result = userData.values_discovered?.length >= 3 || userData.user_preferences?.values;
+        result = userData.values_discovered?.length >= 3 ||
+                 userData.user_preferences?.values ||
+                 userData.values_alignment !== undefined;
         console.log(`🔍 Topic 'values' closed check:
           - values_discovered: ${JSON.stringify(userData.values_discovered)}
           - user_preferences.values: ${userData.user_preferences?.values}
+          - values_alignment: ${JSON.stringify(userData.values_alignment)}
           - Is closed: ${result}
         `);
         break;
