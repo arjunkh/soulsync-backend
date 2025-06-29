@@ -3810,6 +3810,52 @@ function formatMemoriesForPrompt(memories) {
   return memorySection;
 }
 
+// NEW FUNCTION - Generate contextual greetings
+function generateContextualGreeting(userName, isReturning = false, lastSeen = null) {
+  const now = new Date();
+  const hour = now.getHours();
+
+  // Determine time of day
+  let timeContext = '';
+  let emoji = '';
+
+  if (hour >= 5 && hour < 12) {
+    timeContext = 'morning';
+    emoji = '☀️';
+  } else if (hour >= 12 && hour < 17) {
+    timeContext = 'afternoon';
+    emoji = '🌤';
+  } else if (hour >= 17 && hour < 21) {
+    timeContext = 'evening';
+    emoji = '🌅';
+  } else {
+    timeContext = 'late night';
+    emoji = '🌙';
+  }
+
+  if (isReturning && lastSeen) {
+    const hoursSince = Math.floor((now - new Date(lastSeen)) / (1000 * 60 * 60));
+
+    if (hoursSince < 24) {
+      return `Back again, ${userName}! ${emoji} How's your ${timeContext} going?`;
+    } else if (hoursSince < 168) {
+      return `Hey ${userName}! Good to see you this ${timeContext} ${emoji} What's been on your mind?`;
+    } else {
+      return `${userName}! It's been a while ${emoji} How have you been?`;
+    }
+  }
+
+  // First message of a conversation
+  const greetings = {
+    morning: `Good morning ${userName}! ${emoji} Hope you're starting the day well`,
+    afternoon: `Hey ${userName}! ${emoji} How's your afternoon treating you?`,
+    evening: `Evening ${userName}! ${emoji} How was your day?`,
+    'late night': `Hey ${userName}! ${emoji} Couldn't sleep either?`
+  };
+
+  return greetings[timeContext];
+}
+
 // NEW FUNCTION - GPT-based insight extraction
 async function extractConversationInsights(userMessage, conversationType = 'general') {
   console.log('[GPT-EXTRACTION] Starting extraction for message:', userMessage.substring(0, 50) + '...');
@@ -3915,6 +3961,124 @@ async function analyzeMessageForMBTI(message, conversationHistory = []) {
     console.log('[GPT-MBTI] Error:', error.message);
     return null;
   }
+}
+
+// NEW FUNCTION - Generate ARIA's response using GPT
+async function generateAriaResponse(userMessage, userId, conversationContext) {
+  console.log('[ARIA-GPT] Generating intelligent response');
+
+  try {
+    // 1. Load what we know about the user
+    const userInsights = await pool.query(
+      'SELECT * FROM user_insight_map WHERE user_id = $1',
+      [userId]
+    );
+
+    const userData = await pool.query(
+      'SELECT personality_data, couple_compass_data FROM users WHERE user_id = $1',
+      [userId]
+    );
+
+    const insights = userInsights.rows[0] || {};
+    const personalityData = userData.rows[0]?.personality_data || {};
+
+    // 2. Determine what we still need
+    const missingData = [];
+    if (!insights.love_language?.value) missingData.push('love language');
+    if (!insights.attachment_style?.value) missingData.push('attachment style');
+    if (!insights.conflict_style?.value) missingData.push('conflict resolution style');
+    if (!insights.lifestyle_preferences?.value) missingData.push('lifestyle preferences');
+    if (!insights.values_alignment?.value) missingData.push('core values');
+
+    // Check MBTI completion
+    const mbtiScores = personalityData.mbti_confidence_scores || {};
+    const mbtiNeeded = [];
+    if ((mbtiScores.E_I || 50) === 50) mbtiNeeded.push('introvert/extrovert tendencies');
+    if ((mbtiScores.S_N || 50) === 50) mbtiNeeded.push('practical vs conceptual thinking');
+    if ((mbtiScores.T_F || 50) === 50) mbtiNeeded.push('decision-making style');
+    if ((mbtiScores.J_P || 50) === 50) mbtiNeeded.push('planning vs flexibility preference');
+
+    // 3. Build context for GPT
+    const knownInsights = [];
+    Object.entries(insights).forEach(([key, data]) => {
+      if (data?.value && key !== 'user_id' && key !== 'last_updated') {
+        knownInsights.push(`${key.replace(/_/g, ' ')}: ${data.value}`);
+      }
+    });
+
+    // 4. Create the prompt
+    const systemPrompt = `You are Aria, a warm, intelligent matchmaker with a gift for understanding people. 
+    
+Your personality:
+- Warm and approachable, never clinical or robotic
+- Genuinely curious about people's inner worlds
+- Observational - you notice patterns and make gentle insights
+- You guide conversations naturally toward understanding relationship needs
+
+Current conversation context:
+- User just said: "${userMessage}"
+- Previous messages: ${conversationContext.recentMessages || 'First exchange'}
+
+What you know about the user:
+${knownInsights.length > 0 ? knownInsights.join('\n') : 'Still getting to know them'}
+
+What you're curious to understand next (pick ONE to explore naturally):
+${missingData.length > 0 ? missingData[0] : mbtiNeeded[0] || 'deeper understanding of their values'}
+
+Your response should:
+1. Acknowledge what they just shared
+2. Make an observation or share a brief insight if appropriate
+3. Naturally transition to exploring the next area
+4. Be conversational, not interview-like
+5. Maximum 2-3 sentences
+
+Never ask directly about categories like "What's your attachment style?" Instead, explore through natural curiosity.`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ],
+        max_tokens: 150,
+        temperature: 0.8
+      })
+    });
+
+    if (!response.ok) {
+      console.log('[ARIA-GPT] Failed to generate response');
+      return null;
+    }
+
+    const data = await response.json();
+    const ariaResponse = data.choices[0].message.content;
+    console.log('[ARIA-GPT] Generated response:', ariaResponse);
+
+    return ariaResponse;
+  } catch (error) {
+    console.error('[ARIA-GPT] Error:', error);
+    return null;
+  }
+}
+
+// NEW FUNCTION - Get conversation context
+function getConversationContext(messages) {
+  const recentMessages = messages.slice(-4).map(m =>
+    `${m.role === 'user' ? 'User' : 'Aria'}: ${m.content}`
+  ).join('\n');
+
+  return {
+    recentMessages,
+    messageCount: messages.length,
+    lastUserMessage: messages[messages.length - 1]?.content || '',
+    lastAriaMessage: messages.slice(0, -1).reverse().find(m => m.role === 'assistant')?.content || ''
+  };
 }
 
 // Enhanced Aria Personality with PRD Vision
@@ -5658,7 +5822,7 @@ async function saveMatch(user1Id, user2Id, compatibilityData) {
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, userId = 'default', coupleCompassState } = req.body;
-    const conversationContext = {
+    let conversationContext = {
       lastAriaQuestion: messages.slice(-2, -1)[0]?.role === 'assistant' ? messages.slice(-2, -1)[0] : null,
       isResponseToQuestion: messages.length >= 2 && messages[messages.length - 2].role === 'assistant'
     };
@@ -5672,6 +5836,37 @@ app.post('/api/chat', async (req, res) => {
     // Get or create user profile
     const user = await getOrCreateUser(userId);
     const userName = user?.user_name || 'there';
+
+    // Check if this is a brand new user
+    const isFirstMessage = messages.length === 1 && user.total_conversations === 0;
+
+    if (isFirstMessage) {
+      console.log(`🎉 First interaction with ${userName} - sending ARIA introduction`);
+
+      const ariaIntroduction = `Hey ${userName}! I'm Aria, your personal matchmaker 💕\n\nBefore I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.\n\nLet's talk. I'm all ears, and your story is where the magic begins ✨`;
+
+      // Save this as first conversation
+      await saveConversation(
+        userId,
+        [{ role: 'assistant', content: ariaIntroduction }],
+        { introduction_sent: true },
+        'Introduction'
+      );
+
+      return res.json({
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: ariaIntroduction
+          }
+        }],
+        userInsights: {
+          isNewUser: true,
+          introductionSent: true,
+          conversationCount: 1
+        }
+      });
+    }
 
     console.log(`📋 Complete User Data for ${userName}:
       - values_discovered: ${JSON.stringify(user.personality_data?.values_discovered)}
@@ -5706,6 +5901,16 @@ app.post('/api/chat', async (req, res) => {
     // Get the latest user message
     const latestUserMessage = messages[messages.length - 1];
     if (latestUserMessage && latestUserMessage.role === 'user') {
+
+      // Contextual greeting for the second message
+      if (messages.length === 2 && messages[0].role === 'assistant' && messages[1].role === 'user') {
+        const contextualGreeting = generateContextualGreeting(userName, false);
+        const greetingPrefix = contextualGreeting + ' ';
+
+        console.log(`[GREETING] Adding contextual greeting: ${contextualGreeting}`);
+
+        conversationContext.greetingPrefix = greetingPrefix;
+      }
 
       // Track topics from current message
       const messageTopics = ['movies', 'sports', 'work', 'family', 'weekend', 'food']
@@ -5753,32 +5958,36 @@ app.post('/api/chat', async (req, res) => {
       // Check if this is a response to Couple Compass invitation
       const previousMessages = messages.slice(-3); // Last 3 messages
       const ariaLastMessage = previousMessages.find(m => m.role === 'assistant')?.content || '';
-      const ariaOfferedCompass = ariaLastMessage.toLowerCase().includes('couple compass') &&
-                                (ariaLastMessage.includes('would you like') ||
-                                 ariaLastMessage.includes('ready to begin'));
-      const userMessage = latestUserMessage.content.toLowerCase();
+      const ariaMessageLower = (ariaLastMessage || '').toLowerCase();
+      const ariaOfferedCompass = ariaMessageLower.includes('couple compass') && 
+        (ariaMessageLower.includes('would you like') ||
+         ariaMessageLower.includes('ready') ||
+         ariaMessageLower.includes('want to try') ||
+         ariaMessageLower.includes('shall we start'));
 
-      console.log(`🔍 DEBUG - Acceptance detection:
-  - previousMessages count: ${previousMessages.length}
-  - ariaLastMessage preview: ${ariaLastMessage.substring(0, 50)}...
-  - ariaOfferedCompass: ${ariaOfferedCompass}
-  - userMessage: ${userMessage}
+      const userAcceptanceWords = ['yes', 'sure', 'ok', 'okay', 'let\'s go', 'lets go', 
+                                  'let\'s do it', 'lets do it', 'absolutely', 'definitely', 
+                                  'yeah', 'yep', 'yup', 'start', 'begin', 'ready'];
+
+      const userMessage = latestUserMessage.content;
+
+      const userAccepted = userAcceptanceWords.some(word => 
+        userMessage.toLowerCase().trim() === word || 
+        userMessage.toLowerCase().includes(`${word} `) ||
+        userMessage.toLowerCase().includes(` ${word}`)
+      );
+
+      console.log(`🧭 Couple Compass Check:
+  - Aria offered: ${ariaOfferedCompass}
+  - User accepted: ${userAccepted}
+  - User message: "${userMessage}"
 `);
 
       if (ariaOfferedCompass && !alreadyCompleted && !coupleCompassState?.active) {
-        const acceptanceWords = [
-          'yes', 'sure', 'ok', 'okay', 'let\'s go', 'lets go', 'let\'s do',
-          'lets do', 'let\'s start', 'lets start', 'yeah', 'yep', 'absolutely',
-          'definitely', 'ready', 'begin', 'start', 'play', 'try'
-        ];
-
-        userAcceptedCompass = acceptanceWords.some(word => {
-          const regex = new RegExp(`\\b${word}\\b`, 'i');
-          return regex.test(userMessage);
-        });
+        userAcceptedCompass = userAccepted;
 
         if (userAcceptedCompass) {
-          console.log(`🎯 User ${userName} accepted Couple Compass!`);
+          console.log(`✅ User ${userName} accepted Couple Compass!`);
           skipAutoProgression = true;
         }
       }
@@ -5993,11 +6202,20 @@ app.post('/api/chat', async (req, res) => {
   - coupleCompassState?.active: ${coupleCompassState?.active}
 `);
 
-      // Only force invitation if truly needed
       if (autoProgressCheck.readyForCompass && !coupleCompassState?.active && !gameState) {
         console.log(`🎯 Auto-triggering Couple Compass invitation for ${userName}`);
 
-        // Build personalized invitation
+        // Mark that we've invited to Couple Compass
+        await pool.query(`
+          UPDATE users 
+          SET personality_data = jsonb_set(
+            COALESCE(personality_data, '{}'::jsonb),
+            '{couple_compass_invited}',
+            'true'
+          )
+          WHERE user_id = $1
+        `, [userId]);
+
         const knownTraits = [];
         if (knowledgeScore.loveLanguage) knownTraits.push('how you express love');
         if (knowledgeScore.values) knownTraits.push('what you value most');
@@ -6015,7 +6233,9 @@ app.post('/api/chat', async (req, res) => {
           userInsights: {
             ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
             autoProgressTriggered: true,
-            readyForMatching: true
+            readyForMatching: true,
+            coupleCompassReady: true,
+            coupleCompassInvited: true
           }
         });
       }
@@ -6167,31 +6387,54 @@ app.post('/api/chat', async (req, res) => {
         `reportReady ${analysis.ready_for_report?.ready}`
       );
 
-      // Call OpenAI with optimized settings
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: adaptiveMessages,
-          max_tokens: 200, // Slightly more for personality
-          temperature: 0.9, // Higher for more personality
-          presence_penalty: 0.3,
-          frequency_penalty: 0.2
-        })
-      });
+      // Generate intelligent response using ARIA GPT
+      conversationContext = getConversationContext(messages);
+      const intelligentResponse = await generateAriaResponse(
+        latestUserMessage.content,
+        userId,
+        conversationContext
+      );
 
-      if (!response.ok) {
-        const errorData = await response.text();
-        return res.status(response.status).json({ 
-          error: `OpenAI API Error: ${errorData}` 
+      let data;
+
+      if (intelligentResponse) {
+        console.log('✨ Using ARIA intelligent response');
+        data = {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: intelligentResponse
+            }
+          }]
+        };
+      } else {
+        console.log('⚠️ Falling back to original response system');
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: adaptiveMessages,
+            max_tokens: 200,
+            temperature: 0.9,
+            presence_penalty: 0.3,
+            frequency_penalty: 0.2
+          })
         });
-      }
 
-      const data = await response.json();
+        if (!response.ok) {
+          const errorData = await response.text();
+          return res.status(response.status).json({
+            error: `OpenAI API Error: ${errorData}`
+          });
+        }
+
+        data = await response.json();
+      }
 
       if (directorResults.currentGoal) {
         const insight = await extractMatchmakingInsights(
