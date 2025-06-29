@@ -5242,6 +5242,45 @@ async function updateUserProfile(userId, newInsights) {
     const conversationCount = newInsights.conversation_flow?.conversation_count || currentData.conversation_flow?.conversation_count || 0;
     const message = newInsights.raw_message || '';
 
+    // Use OpenAI to detect additional MBTI boosts from the latest message
+    if (message) {
+      try {
+        const boostRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: 'Return JSON with keys E_I, S_N, T_F, J_P representing score adjustments from -100 to 100 for the user\'s message.' },
+              { role: 'user', content: message }
+            ],
+            max_tokens: 20,
+            temperature: 0.3
+          })
+        });
+
+        if (boostRes.ok) {
+          const boostData = await boostRes.json();
+          const boost = JSON.parse(boostData.choices[0].message.content);
+          console.log('Detected MBTI boosts:', boost);
+          ['E_I', 'S_N', 'T_F', 'J_P'].forEach(dim => {
+            if (typeof boost[dim] === 'number') {
+              const current = updatedMBTI[dim] ?? 50;
+              const adjusted = Math.max(0, Math.min(100, current + boost[dim]));
+              updatedMBTI[dim] = adjusted;
+            }
+          });
+        } else {
+          console.error('MBTI boost API error:', boostRes.status);
+        }
+      } catch (err) {
+        console.error('MBTI boost analysis error:', err);
+      }
+    }
+
     // Merge new insights with existing data
     let updatedData = {
       ...currentData,
