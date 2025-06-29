@@ -4579,20 +4579,28 @@ RESPONSE FRAMEWORK:
 
   // Assess if ready for report generation
   assessReportReadiness(mbtiData, conversationCount) {
-    const mbtiComplete = this.assessMBTICompleteness(mbtiData.mbti_confidence_scores || {});
+    const mbtiComplete = this.assessMBTICompleteness(
+      mbtiData.mbti_confidence_scores || {}
+    );
     const coupleCompassComplete = mbtiData.couple_compass_complete || false;
-    const result = {
-      ready: mbtiComplete.ready && coupleCompassComplete,
-      missing: !mbtiComplete.ready ? 'personality data' : !coupleCompassComplete ? 'couple compass' : null
-    };
+
+    const mbtiReady = mbtiComplete.highConfidenceDimensions >= 2;
+    const compassReady = coupleCompassComplete && conversationCount >= 10;
+
+    const ready = mbtiReady || compassReady;
+    let missing = null;
+    if (!ready) {
+      missing = !mbtiReady ? 'personality data' : 'couple compass';
+    }
 
     console.log(`📊 Report Readiness Check:
-  - MBTI Complete: ${mbtiComplete.ready} (${mbtiComplete.highConfidenceDimensions}/4 dimensions)
+  - MBTI High Dimensions: ${mbtiComplete.highConfidenceDimensions}/4
   - Couple Compass: ${coupleCompassComplete}
-  - Overall Ready: ${result.ready}
+  - Conversation Count: ${conversationCount}
+  - Overall Ready: ${ready}
 `);
 
-    return result;
+    return { ready, missing };
   }
 
   // Detect direct interest in relationships/compatibility
