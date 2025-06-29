@@ -6001,6 +6001,18 @@ app.post('/api/chat', async (req, res) => {
         });
       }
 
+      // Debug: log MBTI scores and values before calling OpenAI
+      const roundedMBTI = Object.fromEntries(
+        Object.entries(updatedProfile.personalityData.mbti_confidence_scores || {})
+          .map(([dim, score]) => [dim, Math.round(score)])
+      );
+      console.log(
+        `➡️ OpenAI call for ${userName}:`,
+        `MBTI ${JSON.stringify(roundedMBTI)}`,
+        `values ${JSON.stringify(updatedProfile.personalityData.values_discovered || [])}`,
+        `reportReady ${analysis.ready_for_report?.ready}`
+      );
+
       // Call OpenAI with optimized settings
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
