@@ -5267,6 +5267,34 @@ async function updateUserProfile(userId, newInsights) {
       couple_compass_complete: newInsights.couple_compass_complete || currentData.couple_compass_complete || false
     };
 
+    // Quick scan for value-related statements
+    if (message) {
+      const coreValueWords = ['value', 'values', 'important', 'matter', 'matters'];
+      const keywordValues = [];
+
+      coreValueWords.forEach(word => {
+        const regex = new RegExp(`${word}\\s+(\\w+)`, 'gi');
+        let m;
+        while ((m = regex.exec(message)) !== null) {
+          keywordValues.push(m[1].replace(/[^a-zA-Z]+/g, ''));
+        }
+      });
+
+      if (keywordValues.length > 0) {
+        updatedData.values_discovered = [
+          ...new Set([...(currentData.values_discovered || []), ...keywordValues])
+        ];
+
+        await updateUserInsightMap(
+          userId,
+          'values_alignment',
+          keywordValues.join(', '),
+          0.6,
+          message
+        );
+      }
+    }
+
     // Enhanced value extraction from messages
     if (newInsights.interests?.includes('relationships')) {
       const valueKeywords = {
