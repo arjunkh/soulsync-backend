@@ -4057,7 +4057,10 @@ Never ask directly about categories like "What's your attachment style?" Instead
     }
 
     const data = await response.json();
-    const ariaResponse = data.choices[0].message.content;
+    let ariaResponse = data.choices[0].message.content;
+    if (conversationContext.prependGreeting) {
+      ariaResponse = conversationContext.prependGreeting + ariaResponse;
+    }
     console.log('[ARIA-GPT] Generated response:', ariaResponse);
 
     return ariaResponse;
@@ -4079,6 +4082,14 @@ function getConversationContext(messages) {
     lastUserMessage: messages[messages.length - 1]?.content || '',
     lastAriaMessage: messages.slice(0, -1).reverse().find(m => m.role === 'assistant')?.content || ''
   };
+}
+
+// Determine if we should use a contextual greeting
+function shouldUseContextualGreeting(messages, conversationHistory) {
+  return messages.length >= 2 &&
+         messages.length <= 4 &&
+         conversationHistory.length < 2 &&
+         !messages.some(m => m.content?.includes('Couple Compass'));
 }
 
 // Enhanced Aria Personality with PRD Vision
@@ -5837,21 +5848,17 @@ app.post('/api/chat', async (req, res) => {
     const user = await getOrCreateUser(userId);
     const userName = user?.user_name || 'there';
 
-    // Check if this is a brand new user
-    const isFirstMessage = messages.length === 1 && user.total_conversations === 0;
+    const conversationHistory = await getUserConversationHistory(userId);
 
-    if (isFirstMessage) {
-      console.log(`🎉 First interaction with ${userName} - sending ARIA introduction`);
+    // More reliable first message detection
+    const isFirstEverMessage = messages.length === 1 &&
+                               messages[0].role === 'user' &&
+                               (!conversationHistory || conversationHistory.length === 0);
+
+    if (isFirstEverMessage) {
+      console.log(`🎉 First ever message from ${userName} - sending ARIA introduction`);
 
       const ariaIntroduction = `Hey ${userName}! I'm Aria, your personal matchmaker 💕\n\nBefore I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.\n\nLet's talk. I'm all ears, and your story is where the magic begins ✨`;
-
-      // Save this as first conversation
-      await saveConversation(
-        userId,
-        [{ role: 'assistant', content: ariaIntroduction }],
-        { introduction_sent: true },
-        'Introduction'
-      );
 
       return res.json({
         choices: [{
@@ -5863,7 +5870,7 @@ app.post('/api/chat', async (req, res) => {
         userInsights: {
           isNewUser: true,
           introductionSent: true,
-          conversationCount: 1
+          conversationCount: 0
         }
       });
     }
@@ -5883,8 +5890,6 @@ app.post('/api/chat', async (req, res) => {
       - Total Insights: ${user.personality_data?.conversation_count || 0}
     `);
 
-    const conversationHistory = await getUserConversationHistory(userId);
-
     // Check if user already completed Couple Compass
     const hasCompletedCoupleCompass = user.personality_data?.couple_compass_complete || false;
     const coupleCompassAnswers = user.couple_compass_data || {};
@@ -5902,14 +5907,10 @@ app.post('/api/chat', async (req, res) => {
     const latestUserMessage = messages[messages.length - 1];
     if (latestUserMessage && latestUserMessage.role === 'user') {
 
-      // Contextual greeting for the second message
-      if (messages.length === 2 && messages[0].role === 'assistant' && messages[1].role === 'user') {
-        const contextualGreeting = generateContextualGreeting(userName, false);
-        const greetingPrefix = contextualGreeting + ' ';
-
-        console.log(`[GREETING] Adding contextual greeting: ${contextualGreeting}`);
-
-        conversationContext.greetingPrefix = greetingPrefix;
+      if (shouldUseContextualGreeting(messages, conversationHistory) && !coupleCompassState?.active) {
+        const timeGreeting = generateContextualGreeting(userName, false);
+        conversationContext.prependGreeting = timeGreeting + ' ';
+        console.log(`[TIME-GREETING] Adding: ${timeGreeting}`);
       }
 
       // Track topics from current message
@@ -6050,16 +6051,28 @@ app.post('/api/chat', async (req, res) => {
           `, [userId]);
 
           if (!result.complete) {
-            // Set up next question with exact text for strict prompt
-            const exactQuestionText = getCoupleCompassQuestionText(coupleCompassState.questionIndex + 1);
-            gameState = {
-              active: true,
-              questionIndex: coupleCompassState.questionIndex + 1,
-              currentQuestion: result.nextQuestion,
-              questionId: result.nextQuestion.id,
-              lastResponse: result.response,
-              exactQuestionText: exactQuestionText
-            };
+            const nextQuestion = result.nextQuestion;
+            const questionNumber = coupleCompassState.questionIndex + 1;
+            const exactQuestionText = `${nextQuestion.text}\n\nA) ${nextQuestion.options[0].text}\nB) ${nextQuestion.options[1].text}\nC) ${nextQuestion.options[2].text}\nD) ${nextQuestion.options[3].text}`;
+
+            return res.json({
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: exactQuestionText
+                }
+              }],
+              userInsights: {
+                ...generateUserInsights(analysis, { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} }, user, conversationCount + 1),
+                coupleCompassActive: true,
+                coupleCompassGameState: {
+                  active: true,
+                  questionIndex: questionNumber,
+                  currentQuestion: nextQuestion,
+                  questionId: nextQuestion.id
+                }
+              }
+            });
           } else {
             // Game completed
             gameState = {
@@ -6389,6 +6402,35 @@ app.post('/api/chat', async (req, res) => {
 
       // Generate intelligent response using ARIA GPT
       conversationContext = getConversationContext(messages);
+
+      // COUPLE COMPASS PROTECTION - DO NOT REMOVE
+      if (coupleCompassState?.active || gameState?.active) {
+        console.log('🎮 Couple Compass Active - Bypassing GPT');
+        const qText = gameState?.exactQuestionText ||
+                       getCoupleCompassQuestionText(gameState?.questionIndex || coupleCompassState.questionIndex || 0);
+        return res.json({
+          choices: [{
+            message: { role: 'assistant', content: qText }
+          }],
+          userInsights: {
+            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+            coupleCompassActive: true,
+            coupleCompassGameState: gameState || coupleCompassState
+          }
+        });
+      } else if (gameState?.justCompleted) {
+        console.log('🎯 Couple Compass Completed - Using synthesis');
+        return res.json({
+          choices: [{
+            message: { role: 'assistant', content: gameState.synthesis }
+          }],
+          userInsights: {
+            ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+            coupleCompassComplete: true
+          }
+        });
+      }
+
       const intelligentResponse = await generateAriaResponse(
         latestUserMessage.content,
         userId,
@@ -6434,6 +6476,10 @@ app.post('/api/chat', async (req, res) => {
         }
 
         data = await response.json();
+      }
+
+      if (conversationContext.prependGreeting) {
+        data.choices[0].message.content = conversationContext.prependGreeting + data.choices[0].message.content;
       }
 
       if (directorResults.currentGoal) {
