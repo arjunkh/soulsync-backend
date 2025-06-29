@@ -4660,6 +4660,10 @@ RESPONSE FRAMEWORK:
       prompt += `\n\nCOUPLE COMPASS ACTIVE: Present question ${questionIndex + 1}/6`;
     }
 
+    console.log('[SYSTEM-PROMPT] Known info count:', knownInfo.length);
+    console.log('[SYSTEM-PROMPT] Values discovered:', personalityData.values_discovered);
+    console.log('[SYSTEM-PROMPT] Ready for Compass:', readyForCompass);
+
     return prompt;
   }
 
