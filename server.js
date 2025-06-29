@@ -4483,7 +4483,7 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
       knownInfo.push(`Core values: ${personalityData.values_discovered.join(', ')}`);
     }
 
-    // Load from insight map
+    // Load insights and sync with personality data
     try {
       const insightResult = await pool.query(
         'SELECT * FROM user_insight_map WHERE user_id = $1',
@@ -4493,8 +4493,15 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
       if (insightResult.rows.length > 0) {
         const insights = insightResult.rows[0];
         Object.entries(insights).forEach(([key, data]) => {
-          if (data?.value && key !== 'user_id' && key !== 'last_updated') {
+          if (data && typeof data === 'object' && data.value) {
             knownInfo.push(`${key.replace(/_/g, ' ')}: ${data.value}`);
+
+            if (key === 'values_alignment') {
+              personalityData.values_discovered = personalityData.values_discovered || [];
+              if (!personalityData.values_discovered.includes(data.value)) {
+                personalityData.values_discovered.push(data.value);
+              }
+            }
           }
         });
       }
