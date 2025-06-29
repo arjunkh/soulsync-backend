@@ -3810,6 +3810,113 @@ function formatMemoriesForPrompt(memories) {
   return memorySection;
 }
 
+// NEW FUNCTION - GPT-based insight extraction
+async function extractConversationInsights(userMessage, conversationType = 'general') {
+  console.log('[GPT-EXTRACTION] Starting extraction for message:', userMessage.substring(0, 50) + '...');
+
+  const extractionPrompt = `Analyze this message and extract relationship-relevant insights.
+
+  Message: "${userMessage}"
+
+  Extract ALL of the following that are present:
+  1. Values: What they find important in relationships/life
+  2. Love Language: How they express/receive love (quality time, physical touch, words, acts, gifts)
+  3. Attachment Style: How they connect (secure, anxious, avoidant indicators)
+  4. Lifestyle: Activities, habits, daily life preferences
+  5. MBTI Indicators: Personality traits (E/I, S/N, T/F, J/P)
+  6. Emotional Needs: What they need from a partner
+  7. Deal Breakers: What they won't accept
+  8. Interests: Hobbies, activities they enjoy
+
+  Return ONLY a JSON object. If nothing found for a category, omit it.
+  Example: {"values": ["growth", "loyalty"], "love_language": ["quality_time"], "lifestyle": ["active", "social"]}`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a relationship insight extractor. Extract only what is clearly indicated.' },
+          { role: 'user', content: extractionPrompt }
+        ],
+        max_tokens: 300,
+        temperature: 0.3
+      })
+    });
+
+    if (!response.ok) {
+      console.log('[GPT-EXTRACTION] Failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const insights = JSON.parse(data.choices[0].message.content);
+    console.log('[GPT-EXTRACTION] Extracted insights:', insights);
+    return insights;
+  } catch (error) {
+    console.log('[GPT-EXTRACTION] Error:', error.message);
+    return null;
+  }
+}
+
+// NEW FUNCTION - GPT-based MBTI analysis
+async function analyzeMessageForMBTI(message, conversationHistory = []) {
+  console.log('[GPT-MBTI] Analyzing message for MBTI indicators');
+
+  const contextMessages = conversationHistory.slice(-3).map(m => m.content || m).join('\n');
+
+  const prompt = `Analyze these messages for MBTI personality indicators.
+
+  Recent context: "${contextMessages}"
+  Current message: "${message}"
+
+  For each MBTI dimension, provide a confidence adjustment (-20 to +20):
+  - E_I: Positive for Extrovert behaviors, negative for Introvert
+  - S_N: Positive for Sensing (concrete, practical), negative for Intuition (abstract, possibilities)
+  - T_F: Positive for Thinking (logical), negative for Feeling (emotional)
+  - J_P: Positive for Judging (organized), negative for Perceiving (flexible)
+
+  Only assign scores for clearly indicated traits. Be conservative.
+  Return ONLY JSON: {"E_I": 0, "S_N": 0, "T_F": 0, "J_P": 0}`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are an MBTI analysis expert. Be precise and conservative.' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 100,
+        temperature: 0.2
+      })
+    });
+
+    if (!response.ok) {
+      console.log('[GPT-MBTI] Failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const mbtiScores = JSON.parse(data.choices[0].message.content);
+    console.log('[GPT-MBTI] Adjustments:', mbtiScores);
+    return mbtiScores;
+  } catch (error) {
+    console.log('[GPT-MBTI] Error:', error.message);
+    return null;
+  }
+}
+
 // Enhanced Aria Personality with PRD Vision
 class AriaPersonality {
   constructor() {
@@ -3949,31 +4056,11 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
 
   // Detect off-topic questions
   detectOffTopic(message) {
-    const msg = message.toLowerCase();
-    
-    // Off-topic keywords that suggest non-personal questions
-    const offTopicKeywords = [
-      'calculate', 'solve', 'equation', 'formula', 'algorithm',
-      'physics', 'chemistry', 'biology', 'mathematics', 'math',
-      'code', 'programming', 'javascript', 'python', 'coding',
-      'homework', 'assignment', 'exam', 'test', 'study',
-      'scientific', 'technical', 'engineering', 'quantum',
-      'what is the', 'how does', 'explain the', 'define',
-      'capital of', 'population of', 'history of',
-      '2+2', 'square root', 'factorial'
-    ];
+    // TEMPORARY: Disable off-topic detection to allow natural conversation flow
+    console.log('[OFF-TOPIC] Check disabled - allowing all messages');
+    return { detected: false, confidence: 'none' };
 
-    // Check if message contains off-topic keywords
-    const isOffTopic = offTopicKeywords.some(keyword => msg.includes(keyword));
-    
-    // Also check for question patterns that are typically academic
-    const academicPatterns = /^(what is|how does|explain|calculate|solve|define|who invented|when was)/i;
-    const hasAcademicPattern = academicPatterns.test(msg);
-
-    return {
-      detected: isOffTopic || hasAcademicPattern,
-      confidence: isOffTopic && hasAcademicPattern ? 'high' : 'medium'
-    };
+    // TODO: In Phase 3, implement GPT-based contextual detection
   }
 
   // Generate off-topic redirect with Aria's personality
@@ -5324,6 +5411,64 @@ async function updateUserProfile(userId, newInsights) {
       couple_compass_complete: newInsights.couple_compass_complete || currentData.couple_compass_complete || false
     };
 
+    // NEW: GPT-based extraction for all insights
+    const gptInsights = await extractConversationInsights(message);
+    const mbtiAdjustments = await analyzeMessageForMBTI(message, []);
+
+    // Apply GPT insights if available
+    if (gptInsights) {
+      console.log('[UPDATE-PROFILE] Applying GPT insights:', gptInsights);
+
+      // Values
+      if (gptInsights.values && gptInsights.values.length > 0) {
+        updatedData.values_discovered = [
+          ...new Set([...(currentData.values_discovered || []), ...gptInsights.values])
+        ];
+
+        // Also update insight map
+        await updateUserInsightMap(
+          userId,
+          'values_alignment',
+          gptInsights.values.join(', '),
+          0.9,
+          [`Extracted from: "${message.substring(0, 100)}..."`]
+        );
+      }
+
+      // Love languages
+      if (gptInsights.love_language && gptInsights.love_language.length > 0) {
+        updatedData.love_language_hints = [
+          ...new Set([...(currentData.love_language_hints || []), ...gptInsights.love_language])
+        ];
+      }
+
+      // Interests
+      if (gptInsights.interests && gptInsights.interests.length > 0) {
+        updatedData.interests = [
+          ...new Set([...(currentData.interests || []), ...gptInsights.interests])
+        ];
+      }
+
+      // Lifestyle
+      if (gptInsights.lifestyle && gptInsights.lifestyle.length > 0) {
+        updatedData.lifestyle_preferences = [
+          ...new Set([...(currentData.lifestyle_preferences || []), ...gptInsights.lifestyle])
+        ];
+      }
+    }
+
+    // Apply MBTI adjustments if available
+    if (mbtiAdjustments) {
+      console.log('[UPDATE-PROFILE] Applying MBTI adjustments:', mbtiAdjustments);
+
+      Object.entries(mbtiAdjustments).forEach(([dimension, adjustment]) => {
+        if (adjustment !== 0) {
+          const current = updatedMBTI[dimension] || 50;
+          updatedMBTI[dimension] = Math.max(0, Math.min(100, current + adjustment));
+        }
+      });
+    }
+
     // Quick scan for value-related statements
     if (message) {
       const coreValueWords = ['value', 'values', 'important', 'matter', 'matters'];
@@ -5509,6 +5654,11 @@ async function saveMatch(user1Id, user2Id, compatibilityData) {
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, userId = 'default', coupleCompassState } = req.body;
+    const conversationContext = {
+      lastAriaQuestion: messages.slice(-2, -1)[0]?.role === 'assistant' ? messages.slice(-2, -1)[0] : null,
+      isResponseToQuestion: messages.length >= 2 && messages[messages.length - 2].role === 'assistant'
+    };
+    console.log('[CONTEXT] Conversation context:', conversationContext);
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
