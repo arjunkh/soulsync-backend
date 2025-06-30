@@ -5831,6 +5831,13 @@ async function saveMatch(user1Id, user2Id, compatibilityData) {
 
 // Main chat endpoint with complete PRD implementation
 app.post('/api/chat', async (req, res) => {
+  console.log(`\n🚀 ============ CHAT ENDPOINT HIT ============`);
+  console.log(`📊 Request details:
+    - Messages count: ${req.body.messages?.length}
+    - First message: ${JSON.stringify(req.body.messages?.[0])}
+    - UserId: ${req.body.userId}
+    - Timestamp: ${new Date().toISOString()}
+  `);
   try {
     const { messages, userId = 'default', coupleCompassState } = req.body;
     let conversationContext = {
@@ -5853,12 +5860,18 @@ app.post('/api/chat', async (req, res) => {
     // More reliable first message detection
     const isFirstEverMessage = messages.length === 1 &&
                                messages[0].role === 'user' &&
-                               (!conversationHistory || conversationHistory.length === 0);
+                               user.total_conversations === 0;
 
     if (isFirstEverMessage) {
       console.log(`🎉 First ever message from ${userName} - sending ARIA introduction`);
 
       const ariaIntroduction = `Hey ${userName}! I'm Aria, your personal matchmaker 💕\n\nBefore I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.\n\nLet's talk. I'm all ears, and your story is where the magic begins ✨`;
+
+      // Update conversation count for first message
+      await pool.query(
+        'UPDATE users SET total_conversations = 1 WHERE user_id = $1',
+        [userId]
+      );
 
       return res.json({
         choices: [{
@@ -5873,6 +5886,13 @@ app.post('/api/chat', async (req, res) => {
           conversationCount: 0
         }
       });
+    }
+
+    // Time greeting for subsequent messages
+    if (shouldUseContextualGreeting(messages, conversationHistory) && !coupleCompassState?.active) {
+      const timeGreeting = generateContextualGreeting(userName, false);
+      conversationContext.prependGreeting = timeGreeting + ' ';
+      console.log(`[TIME-GREETING] Adding: ${timeGreeting}`);
     }
 
     console.log(`📋 Complete User Data for ${userName}:
@@ -5906,12 +5926,6 @@ app.post('/api/chat', async (req, res) => {
     // Get the latest user message
     const latestUserMessage = messages[messages.length - 1];
     if (latestUserMessage && latestUserMessage.role === 'user') {
-
-      if (shouldUseContextualGreeting(messages, conversationHistory) && !coupleCompassState?.active) {
-        const timeGreeting = generateContextualGreeting(userName, false);
-        conversationContext.prependGreeting = timeGreeting + ' ';
-        console.log(`[TIME-GREETING] Adding: ${timeGreeting}`);
-      }
 
       // Track topics from current message
       const messageTopics = ['movies', 'sports', 'work', 'family', 'weekend', 'food']
@@ -6289,15 +6303,6 @@ app.post('/api/chat', async (req, res) => {
       let systemMessages = [];
       const userMemories = await loadUserMemories(userId);
 
-      if (user.total_conversations === 0 || userMemories.length === 0) {
-        const introMessage = aria.generateIntroMessage(user.user_name, user.user_gender);
-        systemMessages.push({ role: 'assistant', content: introMessage });
-      } else {
-        // Returning user with memories
-        const memoryHighlight = userMemories[0]?.memory || '';
-        const welcomeBack = `Welcome back, ${user.user_name}! 💕 ${memoryHighlight ? `I remember you ${memoryHighlight.toLowerCase()}. ` : ''}How have you been?`;
-        systemMessages.push({ role: 'assistant', content: welcomeBack });
-      }
 
       // Handle off-topic redirect
       if (analysis.off_topic?.detected) {
@@ -6365,7 +6370,6 @@ app.post('/api/chat', async (req, res) => {
       // Prepare messages with natural conversation prompt
       const adaptiveMessages = [
         { role: 'system', content: adaptivePrompt },
-        ...systemMessages,
         ...messages.slice(1) // Skip original system message
       ];
 
@@ -6431,6 +6435,9 @@ app.post('/api/chat', async (req, res) => {
         });
       }
 
+      console.log('💬 Normal conversation - Using GPT');
+      console.log(`📝 About to generate response for: "${latestUserMessage.content}"`);
+
       const intelligentResponse = await generateAriaResponse(
         latestUserMessage.content,
         userId,
@@ -6440,7 +6447,7 @@ app.post('/api/chat', async (req, res) => {
       let data;
 
       if (intelligentResponse) {
-        console.log('✨ Using ARIA intelligent response');
+        console.log('✨ Using ARIA intelligent response:', intelligentResponse.substring(0, 50) + '...');
         data = {
           choices: [{
             message: {
@@ -6450,7 +6457,7 @@ app.post('/api/chat', async (req, res) => {
           }]
         };
       } else {
-        console.log('⚠️ Falling back to original response system');
+        console.log('⚠️ GPT failed, falling back to original system');
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
