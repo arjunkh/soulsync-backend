@@ -1743,6 +1743,45 @@ Aria 💕`;
   }
 }
 
+// Helper to get the true state of Couple Compass from DB
+async function getCoupleCompassProgress(userId) {
+  try {
+    const result = await pool.query(
+      'SELECT couple_compass_data FROM users WHERE user_id = $1',
+      [userId]
+    );
+
+    const answers = result.rows[0]?.couple_compass_data || {};
+    const answeredQuestions = Object.keys(answers);
+    const questionOrder = [
+      'living_arrangement',
+      'financial_style',
+      'children_vision',
+      'conflict_style',
+      'ambition_balance',
+      'big_mismatch'
+    ];
+
+    let nextQuestionIndex = 6; // Default to complete
+    for (let i = 0; i < questionOrder.length; i++) {
+      if (!answeredQuestions.includes(questionOrder[i])) {
+        nextQuestionIndex = i;
+        break;
+      }
+    }
+
+    return {
+      answers,
+      answeredCount: answeredQuestions.length,
+      nextQuestionIndex,
+      isComplete: answeredQuestions.length >= 6
+    };
+  } catch (error) {
+    console.error('Error getting Couple Compass progress:', error);
+    return { answers: {}, answeredCount: 0, nextQuestionIndex: 0, isComplete: false };
+  }
+}
+
 // PHASE 4: Basic Compatibility Engine
 class CompatibilityEngine {
   constructor() {
@@ -3576,8 +3615,8 @@ function getCoupleCompassQuestionText(questionIndex) {
 
   if (questionIndex >= 0 && questionIndex < questions.length) {
     const q = questions[questionIndex];
-    // Double newline ensures proper spacing
-    return `${q.text}\n\n${q.options.join('\n')}`;
+    const questionNumber = questionIndex + 1;
+    return `Question ${questionNumber} of 6\n\n${q.text}\n\n${q.options.join('\n')}`;
   }
 
   return null;
@@ -6032,82 +6071,148 @@ app.post('/api/chat', async (req, res) => {
         const validAnswers = ['A', 'B', 'C', 'D'];
 
         if (validAnswers.includes(userAnswer)) {
-          // Map letter to actual answer value
-          coupleCompass.currentQuestionIndex = coupleCompassState.questionIndex;
-          const currentQuestion = coupleCompass.getCurrentQuestion();
-          const answerIndex = validAnswers.indexOf(userAnswer);
-          const selectedAnswer = currentQuestion.options[answerIndex].value;
+          const progress = await getCoupleCompassProgress(userId);
 
-          // LOG FOR DEBUGGING
-          console.log(`📍 Couple Compass Answer Processing:
-    Question: ${currentQuestion.id}
-    User Answer: ${userAnswer}
-    Mapped Value: ${selectedAnswer}
-    Next Question Index: ${coupleCompassState.questionIndex + 1}`);
+          console.log(`📊 Couple Compass Progress Check:
+      - Answered: ${progress.answeredCount}/6
+      - Next Question Index: ${progress.nextQuestionIndex}
+      - Is Complete: ${progress.isComplete}
+      - Frontend thinks: Question ${coupleCompassState.questionIndex + 1}
+    `);
 
-          // Ensure we're using the right question index
-          if (!currentQuestion) {
-            console.error('❌ No current question found at index:', coupleCompassState.questionIndex);
-          }
+          if (progress.isComplete) {
+            console.log('✅ Couple Compass already complete - showing synthesis');
+            coupleCompass.responses = progress.answers;
 
-          // Process the answer and get next question
-          const result = coupleCompass.processAnswer(currentQuestion.id, selectedAnswer, user.user_name);
-
-          // Store answer in database
-          await pool.query(`
-            UPDATE users
-            SET couple_compass_data = jsonb_set(
-              COALESCE(couple_compass_data, '{}'::jsonb),
-              '{${currentQuestion.id}}',
-              '"${selectedAnswer}"'
-            )
-            WHERE user_id = $1
-          `, [userId]);
-
-          if (!result.complete) {
-            const nextQuestion = result.nextQuestion;
-            const questionNumber = coupleCompassState.questionIndex + 1;
-            const exactQuestionText = `${nextQuestion.text}\n\nA) ${nextQuestion.options[0].text}\nB) ${nextQuestion.options[1].text}\nC) ${nextQuestion.options[2].text}\nD) ${nextQuestion.options[3].text}`;
+            await pool.query(`
+        UPDATE users
+        SET personality_data = jsonb_set(
+          COALESCE(personality_data, '{}'::jsonb),
+          '{couple_compass_complete}',
+          'true'
+        )
+        WHERE user_id = $1
+      `, [userId]);
 
             return res.json({
               choices: [{
                 message: {
                   role: 'assistant',
-                  content: exactQuestionText
+                  content: coupleCompass.generateSynthesis(user.user_name)
                 }
               }],
               userInsights: {
-                ...generateUserInsights(analysis, { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} }, user, conversationCount + 1),
-                coupleCompassActive: true,
-                coupleCompassGameState: {
-                  active: true,
-                  questionIndex: questionNumber,
-                  currentQuestion: nextQuestion,
-                  questionId: nextQuestion.id
-                }
+                ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+                coupleCompassComplete: true
               }
             });
-          } else {
-            // Game completed
-            gameState = {
-              active: false,
-              justCompleted: true,
-              synthesis: result.synthesis
-            };
-            
-            // Mark as complete in database
-            await pool.query(`
-              UPDATE users
-              SET personality_data = jsonb_set(
-                COALESCE(personality_data, '{}'::jsonb),
-                '{couple_compass_complete}',
-                'true'
-              )
-              WHERE user_id = $1
-            `, [userId]);
           }
+
+          const currentQuestionIndex = progress.nextQuestionIndex;
+
+          if (currentQuestionIndex >= 6) {
+            console.error('❌ Invalid question index from progress:', currentQuestionIndex);
+            return res.json({
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: "I apologize for the confusion. It looks like you've already completed all questions. Let me generate your results."
+                }
+              }],
+              userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+            });
+          }
+
+          const currentQuestion = coupleCompass.questions[currentQuestionIndex];
+          if (!currentQuestion) {
+            console.error('❌ Question not found at index:', currentQuestionIndex);
+            return res.json({
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: "I'm having trouble loading the next question. Let me check your progress."
+                }
+              }],
+              userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+            });
+          }
+
+          const answerIndex = validAnswers.indexOf(userAnswer);
+          const selectedAnswer = currentQuestion.options[answerIndex].value;
+
+          console.log(`💾 Saving answer: ${currentQuestion.id} = ${selectedAnswer}`);
+
+          await pool.query(`
+      UPDATE users
+      SET couple_compass_data = jsonb_set(
+        COALESCE(couple_compass_data, '{}'::jsonb),
+        '{${currentQuestion.id}}',
+        '"${selectedAnswer}"'
+      )
+      WHERE user_id = $1
+    `, [userId]);
+
+          const wasLastQuestion = currentQuestionIndex === 5;
+          const nowComplete = progress.answeredCount + 1 >= 6;
+
+          if (wasLastQuestion || nowComplete) {
+            console.log('🎉 Couple Compass completed after question', currentQuestionIndex + 1);
+
+            const finalProgress = await getCoupleCompassProgress(userId);
+            coupleCompass.responses = finalProgress.answers;
+
+            await pool.query(`
+        UPDATE users
+        SET personality_data = jsonb_set(
+          COALESCE(personality_data, '{}'::jsonb),
+          '{couple_compass_complete}',
+          'true'
+        )
+        WHERE user_id = $1
+      `, [userId]);
+
+            const synthesis = coupleCompass.generateSynthesis(user.user_name);
+
+            return res.json({
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: synthesis
+                }
+              }],
+              userInsights: {
+                ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+                coupleCompassComplete: true
+              }
+            });
+          }
+
+          const nextQuestionIndex = currentQuestionIndex + 1;
+          const nextQuestion = coupleCompass.questions[nextQuestionIndex];
+
+          const exactQuestionText = `${nextQuestion.text}\n\nA) ${nextQuestion.options[0].text}\nB) ${nextQuestion.options[1].text}\nC) ${nextQuestion.options[2].text}\nD) ${nextQuestion.options[3].text}`;
+
+          return res.json({
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: exactQuestionText
+              }
+            }],
+            userInsights: {
+              ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+              coupleCompassActive: true,
+              coupleCompassGameState: {
+                active: true,
+                questionIndex: nextQuestionIndex,
+                currentQuestion: nextQuestion,
+                questionId: nextQuestion.id,
+                questionNumber: nextQuestionIndex + 1,
+                totalQuestions: 6
+              }
+            }
+          });
         } else {
-          // Invalid input during game
           return res.json({
             choices: [{
               message: {
@@ -6116,9 +6221,9 @@ app.post('/api/chat', async (req, res) => {
               }
             }],
             userInsights: { 
-              ...generateUserInsights(analysis, { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} }, user, conversationCount + 1),
+              ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
               coupleCompassActive: true,
-              coupleCompassGameState: coupleCompassState // Pass current state back
+              coupleCompassGameState: coupleCompassState
             }
           });
         }
@@ -6410,8 +6515,11 @@ app.post('/api/chat', async (req, res) => {
       // COUPLE COMPASS PROTECTION - DO NOT REMOVE
       if (coupleCompassState?.active || gameState?.active) {
         console.log('🎮 Couple Compass Active - Bypassing GPT');
-        const qText = gameState?.exactQuestionText ||
-                       getCoupleCompassQuestionText(gameState?.questionIndex || coupleCompassState.questionIndex || 0);
+
+        const progress = await getCoupleCompassProgress(userId);
+        const correctIndex = Math.min(progress.nextQuestionIndex, 5);
+        const qText = getCoupleCompassQuestionText(correctIndex);
+
         return res.json({
           choices: [{
             message: { role: 'assistant', content: qText }
@@ -6419,7 +6527,11 @@ app.post('/api/chat', async (req, res) => {
           userInsights: {
             ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
             coupleCompassActive: true,
-            coupleCompassGameState: gameState || coupleCompassState
+            coupleCompassGameState: {
+              ...coupleCompassState,
+              questionNumber: correctIndex + 1,
+              totalQuestions: 6
+            }
           }
         });
       } else if (gameState?.justCompleted) {
