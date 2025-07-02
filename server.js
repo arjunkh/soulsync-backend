@@ -3,6 +3,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const GPTBrain = require('./gpt-brain');
 const app = express();
 
 // Feature flags
@@ -25,6 +26,8 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+const gptBrain = new GPTBrain(pool, process.env.OPENAI_API_KEY);
 
 // Enhanced database initialization with allowlist system
 async function initializeDatabase() {
@@ -6541,6 +6544,48 @@ app.post('/api/chat', async (req, res) => {
 
       // Generate intelligent response using ARIA GPT
       conversationContext = getConversationContext(messages);
+
+      if (!coupleCompassState?.active && !gameState) {
+        try {
+          const context = await gptBrain.buildCompleteContext(
+            userId,
+            messages,
+            user,
+            conversationHistory
+          );
+
+          let gptResponse = await gptBrain.generateResponse(
+            latestUserMessage.content,
+            context
+          );
+
+          const insights = await gptBrain.extractInsights(
+            latestUserMessage.content,
+            gptResponse,
+            context
+          );
+
+          await gptBrain.saveInsights(userId, insights);
+          await gptBrain.saveMemory(userId, latestUserMessage.content);
+
+          if (context.conversation.isFirstMessage && !context.user.isFirstTime) {
+            gptResponse = context.temporal.greeting + ' ' + user.user_name + '! ' + gptResponse;
+          }
+
+          return res.json({
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: gptResponse
+              }
+            }],
+            userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+          });
+        } catch (error) {
+          console.error('GPT Brain error:', error);
+          // Fall back to existing system
+        }
+      }
 
       // COUPLE COMPASS PROTECTION - DO NOT REMOVE
       if (coupleCompassState?.active || gameState?.active) {
