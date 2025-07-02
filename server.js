@@ -6102,7 +6102,12 @@ app.post('/api/chat', async (req, res) => {
                 }
               }],
               userInsights: {
-                ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+                ...generateUserInsights(
+                  analysis,
+                  { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} },
+                  user,
+                  conversationHistory.length + 1
+                ),
                 coupleCompassComplete: true
               }
             });
@@ -6119,7 +6124,12 @@ app.post('/api/chat', async (req, res) => {
                   content: "I apologize for the confusion. It looks like you've already completed all questions. Let me generate your results."
                 }
               }],
-              userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+              userInsights: generateUserInsights(
+                analysis,
+                { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} },
+                user,
+                conversationHistory.length + 1
+              )
             });
           }
 
@@ -6133,7 +6143,12 @@ app.post('/api/chat', async (req, res) => {
                   content: "I'm having trouble loading the next question. Let me check your progress."
                 }
               }],
-              userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+              userInsights: generateUserInsights(
+                analysis,
+                { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} },
+                user,
+                conversationHistory.length + 1
+              )
             });
           }
 
@@ -6181,7 +6196,12 @@ app.post('/api/chat', async (req, res) => {
                 }
               }],
               userInsights: {
-                ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+                ...generateUserInsights(
+                  analysis,
+                  { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} },
+                  user,
+                  conversationHistory.length + 1
+                ),
                 coupleCompassComplete: true
               }
             });
@@ -6200,7 +6220,12 @@ app.post('/api/chat', async (req, res) => {
               }
             }],
             userInsights: {
-              ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+              ...generateUserInsights(
+                analysis,
+                { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} },
+                user,
+                conversationHistory.length + 1
+              ),
               coupleCompassActive: true,
               coupleCompassGameState: {
                 active: true,
@@ -6220,8 +6245,13 @@ app.post('/api/chat', async (req, res) => {
                 content: "Please choose A, B, C, or D 😊"
               }
             }],
-            userInsights: { 
-              ...generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1),
+            userInsights: {
+              ...generateUserInsights(
+                analysis,
+                { personalityData: user.personality_data || {}, coupleCompassData: user.couple_compass_data || {} },
+                user,
+                conversationHistory.length + 1
+              ),
               coupleCompassActive: true,
               coupleCompassGameState: coupleCompassState
             }
