@@ -5942,6 +5942,47 @@ app.post('/api/chat', async (req, res) => {
       console.log(`[TIME-GREETING] Adding: ${timeGreeting}`);
     }
 
+    // Add this RIGHT AFTER the first-time user block (around line 5920-5930)
+    // BEFORE any Couple Compass checks
+    if (!coupleCompassState?.active && !gameState) {
+      console.log('🧠 Using GPT Brain for response');
+      try {
+        const context = await gptBrain.buildCompleteContext(
+          userId,
+          messages,
+          user,
+          conversationHistory
+        );
+
+        const gptResponse = await gptBrain.generateResponse(
+          latestUserMessage.content,
+          context
+        );
+
+        // Extract and save insights
+        const insights = await gptBrain.extractInsights(
+          latestUserMessage.content,
+          gptResponse,
+          context
+        );
+        await gptBrain.saveInsights(userId, insights);
+        await gptBrain.saveMemory(userId, latestUserMessage.content);
+
+        return res.json({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: gptResponse
+            }
+          }],
+          userInsights: generateUserInsights(analysis, updatedProfile, user, conversationHistory.length + 1)
+        });
+      } catch (error) {
+        console.error('GPT Brain error:', error);
+        // Fall through to existing logic
+      }
+    }
+
     console.log(`📋 Complete User Data for ${userName}:
       - values_discovered: ${JSON.stringify(user.personality_data?.values_discovered)}
       - user_preferences: ${JSON.stringify(user.personality_data?.user_preferences)}
