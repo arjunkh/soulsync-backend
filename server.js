@@ -4183,11 +4183,7 @@ class AriaPersonality {
 
   // Generate warm, flirty introduction for new users
   generateIntroMessage(userName, userGender) {
-    return `Hey ${userName}! 💕 I'm Aria, your personal matchmaker.
-
-Before I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.
-
-Let's talk. I'm all ears, and your story is where the magic begins ✨`;
+    return ''; // Disabled
   }
 
   getProfessionalInsight(mood, context) {
@@ -4760,6 +4756,7 @@ Let's talk. I'm all ears, and your story is where the magic begins ✨`;
     const { mood, energy, resistance_signals, off_topic } = userAnalysis;
     const personalityData = userProfile.personality_data || {};
     const userName = user?.user_name || 'there';
+    const userGender = user.user_gender;
 
     // Initialize topic tracker
     const topicTracker = new TopicTracker();
@@ -5898,6 +5895,7 @@ app.post('/api/chat', async (req, res) => {
     // Get or create user profile
     const user = await getOrCreateUser(userId);
     const userName = user?.user_name || 'there';
+    const userGender = user.user_gender;
 
     const conversationHistory = await getUserConversationHistory(userId);
 
@@ -5907,32 +5905,41 @@ app.post('/api/chat', async (req, res) => {
                                user.total_conversations === 0;
 
     if (isFirstEverMessage) {
-      console.log(`🎉 First ever message from ${userName} - sending ARIA introduction`);
+      console.log(`🎉 First ever message from ${userName} - using GPT for introduction`);
 
-      const ariaIntroduction = `Hey ${userName}! I'm Aria, your personal matchmaker 💕\n\nBefore I find someone who truly gets you, I want to get to know you — what makes your heart beat a little faster, what matters most in a relationship, and what kind of love you're looking for.\n\nLet's talk. I'm all ears, and your story is where the magic begins ✨`;
-
-      // Update conversation count for first message
-      await pool.query(
-        'UPDATE users SET total_conversations = 1 WHERE user_id = $1',
-        [userId]
-      );
-
-      console.log('🔍 DEBUG: About to generate response');
-      console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
-      console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
-      return res.json({
-        choices: [{
-          message: {
-            role: 'assistant',
-            content: ariaIntroduction
+      try {
+        // Build special context for first-time user
+        const firstTimeContext = {
+          user: {
+            name: userName,
+            gender: userGender,
+            isFirstTime: true
+          },
+          temporal: {
+            timeOfDay: new Date().getHours() < 12 ? 'morning' :
+                       new Date().getHours() < 17 ? 'afternoon' : 'evening'
           }
-        }],
-        userInsights: {
-          isNewUser: true,
-          introductionSent: true,
-          conversationCount: 0
-        }
-      });
+        };
+
+        const gptIntro = await gptBrain.generateResponse(
+          messages[0].content,
+          firstTimeContext
+        );
+
+        await pool.query(
+          'UPDATE users SET total_conversations = 1 WHERE user_id = $1',
+          [userId]
+        );
+
+        return res.json({
+          choices: [{
+            message: { role: 'assistant', content: gptIntro }
+          }],
+          userInsights: { isNewUser: true }
+        });
+      } catch (error) {
+        console.error('GPT intro error:', error);
+      }
     }
 
     // Time greeting for subsequent messages
@@ -5979,8 +5986,21 @@ app.post('/api/chat', async (req, res) => {
         });
       } catch (error) {
         console.error('GPT Brain error:', error);
-        // Fall through to existing logic
+        return res.json({
+          choices: [{
+            message: { role: 'assistant', content: 'How can I help you today?' }
+          }]
+        });
       }
+      return;
+    }
+
+    if (!coupleCompassState?.active) {
+      return res.json({
+        choices: [{
+          message: { role: 'assistant', content: 'How can I help you today?' }
+        }]
+      });
     }
 
     console.log(`📋 Complete User Data for ${userName}:
@@ -6644,8 +6664,21 @@ app.post('/api/chat', async (req, res) => {
           });
         } catch (error) {
           console.error('GPT Brain error:', error);
-          // Fall back to existing system
+          return res.json({
+            choices: [{
+              message: { role: 'assistant', content: 'How can I help you today?' }
+            }]
+          });
         }
+        return;
+      }
+
+      if (!coupleCompassState?.active) {
+        return res.json({
+          choices: [{
+            message: { role: 'assistant', content: 'How can I help you today?' }
+          }]
+        });
       }
 
       // COUPLE COMPASS PROTECTION - DO NOT REMOVE
