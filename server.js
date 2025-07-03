@@ -5873,6 +5873,8 @@ async function saveMatch(user1Id, user2Id, compatibilityData) {
 
 // Main chat endpoint with complete PRD implementation
 app.post('/api/chat', async (req, res) => {
+  console.log('\n🔍 DEBUG: Chat endpoint hit');
+  console.log('🔍 DEBUG: GPT Brain exists?', typeof gptBrain !== 'undefined');
   console.log(`\n🚀 ============ CHAT ENDPOINT HIT ============`);
   console.log(`📊 Request details:
     - Messages count: ${req.body.messages?.length}
@@ -5915,6 +5917,9 @@ app.post('/api/chat', async (req, res) => {
         [userId]
       );
 
+      console.log('🔍 DEBUG: About to generate response');
+      console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+      console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
       return res.json({
         choices: [{
           message: {
@@ -6097,6 +6102,9 @@ app.post('/api/chat', async (req, res) => {
         WHERE user_id = $1
       `, [userId]);
 
+            console.log('🔍 DEBUG: About to generate response');
+            console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+            console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
             return res.json({
               choices: [{
                 message: {
@@ -6215,6 +6223,9 @@ app.post('/api/chat', async (req, res) => {
 
           const exactQuestionText = `${nextQuestion.text}\n\nA) ${nextQuestion.options[0].text}\nB) ${nextQuestion.options[1].text}\nC) ${nextQuestion.options[2].text}\nD) ${nextQuestion.options[3].text}`;
 
+          console.log('🔍 DEBUG: About to generate response');
+          console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+          console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
           return res.json({
             choices: [{
               message: {
@@ -6241,6 +6252,9 @@ app.post('/api/chat', async (req, res) => {
             }
           });
         } else {
+          console.log('🔍 DEBUG: About to generate response');
+          console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+          console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
           return res.json({
             choices: [{
               message: {
@@ -6388,6 +6402,9 @@ app.post('/api/chat', async (req, res) => {
 
         const compassInvite = `${userName}, I've really enjoyed learning about ${knownTraits.join(', ')}. I think I understand enough about what you're looking for to take the next step. Would you like to try the Couple Compass? It's a quick compatibility assessment that will help me find your perfect match.`;
 
+        console.log('🔍 DEBUG: About to generate response');
+        console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+        console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
         return res.json({
           choices: [{
             message: {
@@ -6411,6 +6428,9 @@ app.post('/api/chat', async (req, res) => {
       );
 
       if (contextualResponse && contextualResponse.priority === 'acknowledge_wisdom') {
+        console.log('🔍 DEBUG: About to generate response');
+        console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+        console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
         return res.json({
           choices: [{
             message: {
@@ -6751,6 +6771,9 @@ app.post('/api/chat', async (req, res) => {
       }
 
       // Return enhanced response - CRITICAL FIX: Always include game state
+      console.log('🔍 DEBUG: About to generate response');
+      console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+      console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
       res.json({
         ...data,
         userInsights: {
@@ -6782,17 +6805,26 @@ app.post('/api/chat', async (req, res) => {
 
       if (!response.ok) {
         const errorData = await response.text();
-        return res.status(response.status).json({ 
+        console.log('🔍 DEBUG: About to generate response');
+        console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+        console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
+        return res.status(response.status).json({
           error: `OpenAI API Error: ${errorData}` 
         });
       }
 
       const data = await response.json();
+      console.log('🔍 DEBUG: About to generate response');
+      console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+      console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
       res.json(data);
     }
 
   } catch (error) {
     console.error('Backend error:', error);
+    console.log('🔍 DEBUG: About to generate response');
+    console.log('🔍 DEBUG: Is Couple Compass active?', coupleCompassState?.active);
+    console.log('🔍 DEBUG: Is first message?', isFirstEverMessage);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
