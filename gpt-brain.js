@@ -418,15 +418,36 @@ Extract any insights about:
 6. Emotional Needs: What they need from a partner
 
 Return ONLY a JSON object with discovered insights.
-Example: {"love_language": "acts_of_service", "values": ["growth", "authenticity"]}`;
+Example: {"love_language": "acts_of_service", "values": ["growth", "authenticity"]}
+
+If no clear insights, return empty object: {}`;
 
     try {
       const response = await this.callGPT(
-        'You are an insight extraction system. Extract only clearly indicated information.',
+        'You are an insight extraction system. Extract only clearly indicated information. Return valid JSON only.',
         extractionPrompt
       );
       
-      return JSON.parse(response);
+      // Clean up the response to ensure it's valid JSON
+      let cleanedResponse = response.trim();
+      
+      // Remove any markdown code blocks if present
+      if (cleanedResponse.startsWith('```')) {
+        cleanedResponse = cleanedResponse.replace(/```json?\n?/g, '').replace(/```\n?/g, '');
+      }
+      
+      // Remove any non-JSON content before or after
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedResponse = jsonMatch[0];
+      }
+      
+      try {
+        return JSON.parse(cleanedResponse);
+      } catch (parseError) {
+        console.error('Failed to parse insights:', cleanedResponse);
+        return {};
+      }
     } catch (error) {
       console.error('Insight extraction failed:', error);
       return {};
@@ -493,15 +514,39 @@ Example: {"love_language": "acts_of_service", "values": ["growth", "authenticity
     
 Return ONLY memorable facts like favorites, personal details, preferences.
 Example: ["Loves Italian food", "Has a sister", "Works in tech"]
-Return empty array if nothing memorable.`;
+Return empty array if nothing memorable.
+
+Return valid JSON array only.`;
 
     try {
       const response = await this.callGPT(
-        'Extract memorable facts. Return JSON array.',
+        'Extract memorable facts. Return JSON array only, no other text.',
         extractPrompt
       );
-      return JSON.parse(response);
+      
+      // Clean up the response
+      let cleanedResponse = response.trim();
+      
+      // Remove markdown if present
+      if (cleanedResponse.startsWith('```')) {
+        cleanedResponse = cleanedResponse.replace(/```json?\n?/g, '').replace(/```\n?/g, '');
+      }
+      
+      // Extract array
+      const arrayMatch = cleanedResponse.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        cleanedResponse = arrayMatch[0];
+      }
+      
+      try {
+        const parsed = JSON.parse(cleanedResponse);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (parseError) {
+        console.error('Failed to parse memorable facts:', cleanedResponse);
+        return [];
+      }
     } catch (error) {
+      console.error('Memory extraction error:', error);
       return [];
     }
   }
