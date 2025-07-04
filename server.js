@@ -5,6 +5,29 @@ const { Pool } = require('pg');
 const GPTBrain = require('./gpt-brain');
 const app = express();
 
+let server;
+
+// Handle process termination gracefully
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    pool.end(() => {
+      console.log('Database pool closed');
+      process.exit(0);
+    });
+  });
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+
 // CORS configuration
 app.use(cors({
   origin: '*',
@@ -1174,6 +1197,26 @@ const matchGenerator = new MatchProfileGenerator();
 
 // ==================== API ENDPOINTS ====================
 
+// Root endpoint - Railway often checks this
+app.get('/', (req, res) => {
+  res.json({
+    message: 'SoulSync AI Backend is running',
+    status: 'active',
+    endpoints: {
+      health: '/health',
+      api: '/api/health'
+    }
+  });
+});
+
+// Health check endpoint for Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Phone verification endpoint
 app.post('/api/verify-phone', async (req, res) => {
   try {
@@ -1899,13 +1942,14 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;
+server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`💕 SoulSync AI - Streamlined with GPT Brain`);
   console.log('🧠 GPT Brain: Handles all conversation intelligence');
   console.log('🧭 Couple Compass: Life alignment assessment');
   console.log('📝 Reports: Personal insights generation');
   console.log('💑 Matchmaking: Compatibility analysis');
   console.log('✨ Code Reduction: 66% cleaner, more maintainable');
-  console.log(`🚀 Running on port ${PORT} - Ready to create meaningful connections!`);
+  console.log(`🚀 Running on http://0.0.0.0:${PORT}`);
+  console.log(`📡 Health check available at http://0.0.0.0:${PORT}/health`);
 });
