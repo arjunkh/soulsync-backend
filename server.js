@@ -1976,3 +1976,4 @@ setTimeout(() => {
     console.log('✅ Server is now accepting connections');
   });
 }, 2000); // 2 second delay
+process.stdin.resume();
