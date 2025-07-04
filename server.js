@@ -51,7 +51,19 @@ app.options('*', cors());
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  max: 10
+});
+
+// Test database connection immediately
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('❌ Database connection test failed:', err);
+  } else {
+    console.log('✅ Database connection test successful:', res.rows[0].now);
+  }
 });
 
 const gptBrain = new GPTBrain(pool, process.env.OPENAI_API_KEY);
@@ -196,7 +208,15 @@ async function initializeDatabase() {
 }
 
 // Initialize database on startup
-initializeDatabase();
+initializeDatabase()
+  .then(() => {
+    console.log('✅ Database initialization completed');
+  })
+  .catch(error => {
+    console.error('❌ Fatal: Database initialization failed:', error);
+    console.error('Error details:', error.stack);
+    // Don't exit, let the app continue running
+  });
 
 // Helper Functions
 function normalizePhoneNumber(phone) {
@@ -1942,14 +1962,17 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 8080;
-server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`💕 SoulSync AI - Streamlined with GPT Brain`);
-  console.log('🧠 GPT Brain: Handles all conversation intelligence');
-  console.log('🧭 Couple Compass: Life alignment assessment');
-  console.log('📝 Reports: Personal insights generation');
-  console.log('💑 Matchmaking: Compatibility analysis');
-  console.log('✨ Code Reduction: 66% cleaner, more maintainable');
-  console.log(`🚀 Running on http://0.0.0.0:${PORT}`);
-  console.log(`📡 Health check available at http://0.0.0.0:${PORT}/health`);
-});
+setTimeout(() => {
+  const PORT = process.env.PORT || 8080;
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`💕 SoulSync AI - Streamlined with GPT Brain`);
+    console.log('🧠 GPT Brain: Handles all conversation intelligence');
+    console.log('🧭 Couple Compass: Life alignment assessment');
+    console.log('📝 Reports: Personal insights generation');
+    console.log('💑 Matchmaking: Compatibility analysis');
+    console.log('✨ Code Reduction: 66% cleaner, more maintainable');
+    console.log(`🚀 Running on http://0.0.0.0:${PORT}`);
+    console.log(`📡 Health check available at http://0.0.0.0:${PORT}/health`);
+    console.log('✅ Server is now accepting connections');
+  });
+}, 2000); // 2 second delay
