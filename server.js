@@ -1977,3 +1977,4 @@ setTimeout(() => {
   });
 }, 2000); // 2 second delay
 process.stdin.resume();
+setInterval(() => {}, 2147483647);
