@@ -1,5 +1,5 @@
 // SoulSync AI Backend - COMPLETE IMPLEMENTATION with PRD Vision
-// Flirtatious AI Companion + Couple Compass + Report Generation + Matchmaking
+// AI Matchmaker + Couple Compass + Report Generation + Matchmaking
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
