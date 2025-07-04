@@ -13,6 +13,14 @@ app.use(cors({
   credentials: false
 }));
 app.use(express.json());
+// Error handler for malformed JSON
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.error('Bad JSON:', err.message);
+    return res.status(400).json({ error: 'Invalid JSON format' });
+  }
+  next();
+});
 
 // Handle preflight requests
 app.options('*', cors());
