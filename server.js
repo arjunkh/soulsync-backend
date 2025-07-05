@@ -462,6 +462,47 @@ async function getCoupleCompassProgress(userId) {
   }
 }
 
+// Check if enough data is available to generate the personal report
+async function checkReportReadiness(userId) {
+  try {
+    const user = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+    const userData = user.rows[0];
+    const personalityData = userData.personality_data || {};
+    const coupleCompassData = userData.couple_compass_data || {};
+
+    // Check minimum requirements
+    const hasLoveLanguage = personalityData.love_language ||
+                           (personalityData.love_language_hints?.length > 0);
+    const hasValues = personalityData.values ||
+                     (personalityData.values_discovered?.length > 0);
+    const hasCompass = personalityData.couple_compass_complete ||
+                      Object.keys(coupleCompassData).length >= 6;
+
+    if (hasLoveLanguage && hasValues && hasCompass) {
+      // Generate report
+      const report = reportGenerator.generateReport(
+        userData,
+        personalityData,
+        coupleCompassData
+      );
+
+      await savePersonalReport(userId, report);
+
+      // Mark report as generated
+      await pool.query(
+        'UPDATE users SET report_generated = TRUE WHERE user_id = $1',
+        [userId]
+      );
+
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error checking report readiness:', error);
+    return false;
+  }
+}
+
 // PHASE 2: Couple Compass Game Implementation
 class CoupleCompass {
   constructor() {
@@ -1359,6 +1400,11 @@ app.post('/api/chat', async (req, res) => {
     const hasAnsweredQuestions = Object.keys(coupleCompassAnswers).length >= 6;
     const alreadyCompleted = hasCompletedCoupleCompass || hasAnsweredQuestions;
 
+    if (alreadyCompleted && !gameState && !coupleCompassState?.active) {
+      // Prevent re-entering Couple Compass
+      coupleCompassState = { active: false };
+    }
+
     // Detect Couple Compass acceptance
     let userAcceptedCompass = false;
     const previousMessages = messages.slice(-3);
@@ -1433,6 +1479,8 @@ app.post('/api/chat', async (req, res) => {
             WHERE user_id = $1
           `, [userId]);
 
+          const reportReady = await checkReportReadiness(userId);
+
           return res.json({
             choices: [{
               message: {
@@ -1441,7 +1489,11 @@ app.post('/api/chat', async (req, res) => {
               }
             }],
             userInsights: {
-              coupleCompassComplete: true
+              coupleCompassComplete: true,
+              coupleCompassActive: false,
+              reportAvailable: reportReady,
+              detectedMood: '',
+              currentInterests: []
             }
           });
         }
@@ -1583,6 +1635,8 @@ app.post('/api/chat', async (req, res) => {
           `Message ${messages.length}: Natural conversation`
         );
 
+        const reportReady = await checkReportReadiness(userId);
+
         return res.json({
           choices: [{
             message: {
@@ -1595,7 +1649,9 @@ app.post('/api/chat', async (req, res) => {
             userGender: user.user_gender,
             profileCompleteness: calculateProfileCompleteness(user.personality_data),
             coupleCompassComplete: alreadyCompleted,
-            reportAvailable: user.report_generated
+            reportAvailable: reportReady || user.report_generated,
+            detectedMood: '',
+            currentInterests: []
           }
         });
       } catch (error) {
