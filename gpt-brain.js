@@ -375,9 +375,7 @@ class GPTBrain {
     if (context.personality.known.couple_compass_complete) {
       coupleCompassStatus = 'COMPLETED ✓ - All 6 questions answered. NEVER offer Couple Compass again.';
     }
-// In gpt-brain.js, at the end of buildSystemPrompt()
-console.log('=== SYSTEM PROMPT ===\n', prompt.substring(0, 1000), '\n=== END ===');
-return prompt;
+
     // Get couple compass answers if they exist
     const compassAnswers = context.user.couple_compass_data || {};
 
@@ -439,9 +437,11 @@ Now generate your response:`;
     if (context.mission.primaryGoal === 'offer_couple_compass' || context.mission.urgency === 'compass_ready') {
       prompt += `\n\nCRITICAL: They've shared enough! Naturally transition to suggesting the Couple Compass. Say something like: "${context.user.name}, I've loved learning about your values and what matters to you in relationships. I think you're ready for something special - our Couple Compass. It's a quick 6-question journey that helps me understand exactly what you're looking for in a partner. Would you like to give it a try? 🧭"`;
     }
-
-    return prompt;
-  }
+    // THIS IS WHERE THE CONSOLE.LOG GOES
+  console.log('=== SYSTEM PROMPT ===\n', prompt.substring(0, 1000), '\n=== END ===');
+  return prompt;
+}
+}
 
   formatKnownData(known) {
     if (Object.keys(known).length === 0) {
