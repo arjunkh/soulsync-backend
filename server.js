@@ -1612,6 +1612,17 @@ app.post('/api/chat', async (req, res) => {
           context
         );
 
+        // Periodic deep pattern review
+        const userMessageCount = messages.filter(m => m.role === 'user').length;
+        const patternInsights = await gptBrain.reviewConversationPatterns(
+          userId,
+          userMessageCount,
+          conversationHistory
+        );
+
+        // Merge pattern insights with regular insights
+        Object.assign(insights, patternInsights);
+
         await gptBrain.saveInsights(userId, insights);
         await gptBrain.saveMemory(userId, latestUserMessage.content);
 

@@ -91,6 +91,8 @@ class GPTBrain {
           recentTopics: this.extractRecentTopics(conversationHistory),
           tone: conversationState.tone,
           depth: conversationState.depth,
+          frustrated: conversationState.frustrated,
+          engagement: conversationState.engagement,
           history: conversationSummary
         },
         
@@ -240,13 +242,39 @@ class GPTBrain {
 
   assessConversationState(messages, history, user) {
     const lastMessage = messages[messages.length - 1]?.content || '';
-    
+    const previousMessage = messages[messages.length - 2]?.content || '';
+
+    // Detect frustration patterns
+    const frustrationSignals = [
+      'i already told you',
+      'i just said',
+      'as i mentioned',
+      'done and done',
+      'we already',
+      'i answered that',
+      'check again'
+    ];
+
+    const isUserFrustrated = frustrationSignals.some(signal =>
+      lastMessage.toLowerCase().includes(signal)
+    );
+
+    // Detect engagement level
+    const shortResponses = messages.slice(-3).filter(m =>
+      m.role === 'user' && m.content.length < 20
+    ).length;
+
+    const engagement = shortResponses >= 2 ? 'disengaging' : 'engaged';
+
     return {
       tone: this.detectTone(lastMessage),
       depth: this.assessDepth(messages),
       isSharing: lastMessage.length > 100,
       hasQuestion: lastMessage.includes('?'),
-      emotionalContent: this.hasEmotionalContent(lastMessage)
+      emotionalContent: this.hasEmotionalContent(lastMessage),
+      frustrated: isUserFrustrated,
+      engagement: engagement,
+      needsRedirection: isUserFrustrated || engagement === 'disengaging'
     };
   }
 
@@ -359,6 +387,8 @@ CRITICAL: Before responding, you MUST acknowledge this context:
 User State:
 - Name: ${context.user.name}
 - Current mood: ${context.conversation.tone}
+- Frustrated: ${context.conversation.frustrated ? 'YES - acknowledge immediately!' : 'No'}
+- Engagement: ${context.conversation.engagement}
 - Message count: ${context.conversation.messageCount}
 - Last message: "${context.conversation.currentMessage.substring(0, 50)}${context.conversation.currentMessage.length > 50 ? '...' : ''}"
 
@@ -375,10 +405,11 @@ Your Current Mission:
 ━━━━━━━━━━━━━━━━━━━
 
 RESPONSE RULES:
-1. If user says "I already told you" or seems frustrated → Acknowledge immediately and build on what you know
-2. NEVER ask about topics listed in "What You Already Know"
-3. If Couple Compass is COMPLETED, use their answers to explore deeper, never offer it again
-4. Keep responses 2-3 sentences, warm and conversational
+1. If user is frustrated (${context.conversation.frustrated ? 'THEY ARE!' : 'they are not'}) → Start with empathy and acknowledgment
+2. If engagement is '${context.conversation.engagement}' → ${context.conversation.engagement === 'disengaging' ? 'Ask an intriguing question about their Couple Compass answers' : 'Continue naturally'}
+3. NEVER ask about topics listed in "What You Already Know"
+4. If Couple Compass is COMPLETED, use their answers to explore deeper, never offer it again
+5. Keep responses 2-3 sentences, warm and conversational
 
 About Couple Compass:
 - It's a 6-question compatibility assessment covering life preferences
@@ -597,6 +628,81 @@ Return ONLY a JSON object with discovered insights. No other text.`;
       }
     } catch (error) {
       console.error('Insight extraction failed:', error);
+      return {};
+    }
+  }
+
+  async reviewConversationPatterns(userId, userMessageCount, conversationHistory) {
+    // Run every 10 USER messages (not counting Aria's responses)
+    if (userMessageCount < 10 || userMessageCount % 10 !== 0) {
+      return {};
+    }
+
+    try {
+      console.log(`Running pattern review for user ${userId} at message #${userMessageCount}`);
+
+      // Gather recent conversation data
+      const recentMessages = [];
+      conversationHistory.slice(-5).forEach(conv => {
+        if (conv.messages) {
+          const parsed = typeof conv.messages === 'string' ?
+            JSON.parse(conv.messages) : conv.messages;
+          recentMessages.push(...parsed);
+        }
+      });
+
+      const reviewPrompt = `You are a relationship psychologist reviewing conversation patterns.
+
+USER MESSAGE HISTORY (last 30-50 messages):
+${recentMessages.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+DEEP PATTERN ANALYSIS:
+
+1. Love Language Patterns:
+   - Across all conversations, how does this person express and want to receive love?
+   - What themes appear when they're happy or frustrated?
+   - What do they consistently value in relationships?
+
+2. MBTI Type (combine all evidence):
+   - Social patterns: Introvert or Extrovert?
+   - Decision patterns: Thinking or Feeling?
+   - Information patterns: Sensing or iNtuition?
+   - Lifestyle patterns: Judging or Perceiving?
+   - Only conclude if there's strong evidence
+
+3. Hidden Patterns:
+   - What does this person want but hasn't directly said?
+   - What are their unspoken fears or desires?
+   - What relationship patterns do you observe?
+
+Return ONLY insights that are strongly supported by multiple conversations.
+Return as JSON object with any discovered patterns.`;
+
+      const response = await this.callGPT(
+        'You are a pattern recognition system. Return only JSON.',
+        reviewPrompt
+      );
+
+      // Clean response
+      let cleanedResponse = response.trim();
+      if (cleanedResponse.startsWith('```')) {
+        cleanedResponse = cleanedResponse.replace(/```json?\n?/g, '').replace(/```\n?/g, '');
+      }
+
+      try {
+        const insights = JSON.parse(cleanedResponse);
+        console.log('Pattern review insights:', insights);
+
+        // Save these deeper insights
+        await this.saveInsights(userId, insights);
+
+        return insights;
+      } catch (parseError) {
+        console.error('Failed to parse pattern insights:', cleanedResponse);
+        return {};
+      }
+    } catch (error) {
+      console.error('Pattern review failed:', error);
       return {};
     }
   }
