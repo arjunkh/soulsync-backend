@@ -350,7 +350,10 @@ CRITICAL RULES:
 3. Be naturally curious about ${context.mission.dataNeeded[0] || 'their deeper feelings'}
 4. Reference what you know about them to show you remember
 5. Keep responses warm, personal, and 2-3 sentences`;
-
+// Check if we need to ask about interests
+if (!context.personality.known.interests || context.personality.known.interests.length === 0) {
+  prompt += `\n\n6. They haven't shared any hobbies or interests yet. Find a natural way to ask what they enjoy doing in their free time.`;
+}
     // Add special instructions based on context
     if (context.user.isFirstTime) {
       prompt += `\n\nThis is their FIRST message. Introduce yourself warmly as their personal matchmaker.`;
