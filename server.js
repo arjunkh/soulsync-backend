@@ -253,6 +253,56 @@ function normalizePhoneNumber(phone) {
   return '+91' + cleaned;
 }
 
+// Response Validation Function - catches GPT mistakes
+function validateAndFixResponse(gptResponse, context) {
+  const violations = [];
+
+  // Check for Couple Compass offer when already complete
+  if (
+    context.personality.known.couple_compass_complete &&
+    gptResponse.toLowerCase().includes('couple compass')
+  ) {
+    violations.push('COUPLE_COMPASS_REPEAT');
+  }
+
+  // Check for asking about known interests
+  const knownInterests = context.personality.known.interests || [];
+  if (knownInterests.length > 0) {
+    const lowerResponse = gptResponse.toLowerCase();
+    for (const interest of knownInterests) {
+      if (
+        lowerResponse.includes(interest.toLowerCase()) &&
+        gptResponse.includes('?') &&
+        (lowerResponse.includes('prefer') ||
+          lowerResponse.includes('do you like') ||
+          lowerResponse.includes('what about'))
+      ) {
+        violations.push('ASKING_KNOWN_INFO');
+        break;
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    console.log('GPT Violations detected:', violations);
+
+    if (violations.includes('COUPLE_COMPASS_REPEAT')) {
+      const interests = context.personality.known.interests || [];
+      return `I see you've already completed our compatibility assessment! Based on your thoughtful answers, I'd love to explore what daily life looks like for you. ${
+        interests.includes('sports match') ? 'After those exciting match days with friends, ' : ''
+      }what helps you unwind and recharge?`;
+    }
+
+    if (violations.includes('ASKING_KNOWN_INFO')) {
+      return `I love that you enjoy ${knownInterests.join(
+        ' and '
+      )}! Building on that, I'm curious about your daily routines - are you more of a structured planner or do you prefer going with the flow?`;
+    }
+  }
+
+  return gptResponse; // No violations, return original
+}
+
 async function isPhoneAllowed(phoneNumber) {
   try {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
@@ -1604,6 +1654,10 @@ app.post('/api/chat', async (req, res) => {
           latestUserMessage.content,
           context
         );
+
+        // VALIDATE AND FIX RESPONSE BEFORE PROCESSING
+        gptResponse = validateAndFixResponse(gptResponse, context);
+        console.log('Response validated');
 
         // Extract and save insights
         const insights = await gptBrain.extractInsights(
