@@ -29,6 +29,11 @@ class GPTBrain {
       );
       const insights = insightResult.rows[0] || {};
 
+      // Ensure couple_compass_data is available in user object
+      if (!user.couple_compass_data && user.personality_data?.couple_compass_data) {
+        user.couple_compass_data = user.personality_data.couple_compass_data;
+      }
+
       // Load memories
       const memories = await this.loadRecentMemories(userId);
 
@@ -59,7 +64,8 @@ class GPTBrain {
           isFirstTime: user.total_conversations === 0,
           lastSeen: user.last_seen,
           memberSince: user.created_at,
-          totalConversations: user.total_conversations
+          totalConversations: user.total_conversations,
+          couple_compass_data: user.couple_compass_data
         },
         
         personality: {
@@ -336,46 +342,56 @@ class GPTBrain {
   }
 
   buildSystemPrompt(context) {
-    let prompt = `You are Aria, a warm, emotionally intelligent personal matchmaker. 
+    // Determine Couple Compass status
+    let coupleCompassStatus = 'Not started - may offer after building rapport';
+    if (context.personality.known.couple_compass_complete) {
+      coupleCompassStatus = 'COMPLETED ✓ - All 6 questions answered. NEVER offer Couple Compass again.';
+    }
 
-Your personality: Professionally flirty, genuinely curious, warm, and caring. You use emojis naturally and keep responses to 2-3 sentences.
+    // Get couple compass answers if they exist
+    const compassAnswers = context.user.couple_compass_data || {};
 
-Current Context:
-- User: ${context.user.name} (${context.user.gender}${context.user.age ? ', ' + context.user.age : ''})
-- Time: ${context.temporal.timeOfDay} (${context.temporal.dayOfWeek})
-- Conversation: Message #${context.conversation.messageCount}
-- Their mood: ${context.conversation.tone}
-- Progress: ${context.progress.percentage}% ready (${context.progress.collected}/${context.progress.total} insights collected)
+    let prompt = `You are Aria, a warm personal matchmaker who helps people find meaningful connections.
 
-What you ALREADY KNOW about them:
+CRITICAL: Before responding, you MUST acknowledge this context:
+
+━━━━━ CONTEXT CHECK ━━━━━
+User State:
+- Name: ${context.user.name}
+- Current mood: ${context.conversation.tone}
+- Message count: ${context.conversation.messageCount}
+- Last message: "${context.conversation.currentMessage.substring(0, 50)}${context.conversation.currentMessage.length > 50 ? '...' : ''}"
+
+What You Already Know:
 ${this.formatKnownData(context.personality.known)}
 
-What you still need to discover:
-${context.personality.missing.slice(0, 3).join(', ') || 'All major insights collected!'}
+Couple Compass Status:
+${coupleCompassStatus}
 
-${this.getConversationGuidance(context)}
+Your Current Mission:
+- Primary goal: ${context.mission.primaryGoal}
+- Must discover: ${context.mission.dataNeeded.length > 0 ? context.mission.dataNeeded.join(', ') : 'deeper emotional understanding'}
+- Urgency: ${context.mission.urgency}
+━━━━━━━━━━━━━━━━━━━
+
+RESPONSE RULES:
+1. If user says "I already told you" or seems frustrated → Acknowledge immediately and build on what you know
+2. NEVER ask about topics listed in "What You Already Know"
+3. If Couple Compass is COMPLETED, use their answers to explore deeper, never offer it again
+4. Keep responses 2-3 sentences, warm and conversational
+
+About Couple Compass:
+- It's a 6-question compatibility assessment covering life preferences
+- Once completed, it provides deep insights for matching
+- Users can only take it ONCE in their lifetime
+${Object.keys(compassAnswers).length > 0 ? 
+  `- Their answers reveal: ${compassAnswers.living_arrangement || 'unknown'} living preference, ${compassAnswers.financial_style || 'unknown'} financial approach, ${compassAnswers.children_vision || 'unknown'} on children` : ''}
 
 Recent memories:
 ${context.personality.memories.map(m => `- ${m.memory}`).join('\n') || 'No specific memories yet'}
 
-Past conversation summary:
-${context.conversation.history}
+Now generate your response:`;
 
-CRITICAL RULES:
-1. NEVER ask about the same thing twice - check "What you ALREADY KNOW" before asking
-2. If you already know their values/love language/etc, build on it instead of asking again
-3. Be naturally curious about ${context.mission.dataNeeded[0] || 'their deeper feelings'}
-4. Reference what you know about them to show you remember
-5. Keep responses warm, personal, and 2-3 sentences`;
-// Check if we need to ask about interests
-if (!context.personality.known.interests || context.personality.known.interests.length === 0) {
-  prompt += `\n\n6. They haven't shared any hobbies or interests yet. Find a natural way to ask what they enjoy doing in their free time - what activities, hobbies, or pastimes bring them joy?`;
-}
-
-// Check if Couple Compass is already complete
-if (context.personality.known.couple_compass_complete) {
-  prompt += `\n\nCRITICAL: User has ALREADY completed the Couple Compass. Never offer it again. Focus on deepening the conversation about their life, dreams, and experiences.`;
-}
     // Add special instructions based on context
     if (context.user.isFirstTime) {
       prompt += `\n\nThis is their FIRST message. Introduce yourself warmly as their personal matchmaker.`;
@@ -426,7 +442,7 @@ if (context.personality.known.couple_compass_complete) {
     }
 
     if (known.couple_compass_complete) {
-      formatted.push(`- Couple Compass: Completed ✓`);
+      formatted.push(`- Couple Compass: COMPLETED ✓ (Never offer again)`);
     }
 
     return formatted.join('\n') || 'Still getting to know them';
@@ -508,28 +524,50 @@ if (context.personality.known.couple_compass_complete) {
 
   async extractInsights(userMessage, ariaResponse, context) {
     // More specific extraction based on conversation
-    const extractionPrompt = `Analyze this conversation for relationship insights.
+    const extractionPrompt = `You are a relationship psychologist with deep understanding of human emotions and personality.
 
+CONVERSATION TO ANALYZE:
 User "${context.user.name}" said: "${userMessage}"
 Aria responded: "${ariaResponse}"
 
-Current known data: ${JSON.stringify(context.personality.known)}
+CONTEXT ABOUT THIS USER:
+- Known traits: ${JSON.stringify(context.personality.known)}
+- Interests: ${(context.personality.interests || []).join(', ') || 'none mentioned yet'}
+- Message #${context.conversation.messageCount} in conversation
+${context.personality.known.couple_compass_complete && context.user.couple_compass_data ? 
+  `- Couple Compass answers: ${JSON.stringify(context.user.couple_compass_data)}` : 
+  ''}
 
-Extract NEW insights only (don't repeat what we already know):
+EXTRACT DEEP INSIGHTS:
 
-1. Love Language: Look for mentions of acts of service, words of affirmation, physical touch, quality time, or gifts
-2. Values: Look for what they say is important (honesty, loyalty, kindness, ambition, etc)
-3. Conflict Style: How they handle disagreements (avoid, discuss, need space, etc)
-4. Attachment Style: How they form bonds (secure, anxious, avoidant)
-5. Interests: Hobbies or activities they mention
+1. Love Language Analysis:
+   - How does this person want to feel loved?
+   - What emotional needs are they expressing?
+   - If they mention activities (like movie nights), what emotional need does it fulfill?
+   - Don't look for keywords - understand their heart
+   
+2. MBTI Personality Patterns (infer naturally):
+   - Social energy: How do they recharge? (Introvert/Extrovert)
+   - Decision making: Heart or head? (Thinking/Feeling)
+   - Information style: Details or big picture? (Sensing/iNtuition)  
+   - Lifestyle: Planned or spontaneous? (Judging/Perceiving)
+   - Don't assign a type, just note patterns
+   
+3. Attachment Style:
+   - How do they describe relationships?
+   - What makes them feel secure or anxious?
+   
+4. Unspoken Insights:
+   - What did they reveal between the lines?
+   - What patterns emerge from their communication style?
 
-Examples from the message:
-- If they say "acts of service" or "helping with chores" → love_language: "acts_of_service"
-- If they say "loyalty and kindness matter" → values: ["loyalty", "kindness"]
-- If they say "I take a break during conflicts" → conflict_style: "need_space"
+IMPORTANT: 
+- Return only genuine NEW insights discovered in this conversation
+- Don't repeat what's already known
+- If nothing new was revealed, return empty object: {}
+- Look for meaning, not keywords
 
-Return ONLY a JSON object with discovered insights.
-If nothing new found, return empty object: {}`;
+Return ONLY a JSON object with discovered insights. No other text.`;
 
     try {
       const response = await this.callGPT(
