@@ -1,4 +1,4 @@
-// gpt-brain.js - Intelligent Conversation System for SoulSync
+// gpt-brain.js - Fixed Intelligent Conversation System for SoulSync
 const { Pool } = require('pg');
 
 class GPTBrain {
@@ -29,6 +29,9 @@ class GPTBrain {
       );
       const insights = insightResult.rows[0] || {};
 
+      // Load memories
+      const memories = await this.loadRecentMemories(userId);
+
       // Calculate what we know and what we need
       const knownData = this.assessKnownData(user, insights);
       const missingData = this.identifyMissingData(knownData);
@@ -44,6 +47,9 @@ class GPTBrain {
         user
       );
 
+      // Build conversation summary from history
+      const conversationSummary = this.buildConversationSummary(conversationHistory);
+
       return {
         user: {
           id: userId,
@@ -52,21 +58,22 @@ class GPTBrain {
           age: user.age,
           isFirstTime: user.total_conversations === 0,
           lastSeen: user.last_seen,
-          memberSince: user.created_at
+          memberSince: user.created_at,
+          totalConversations: user.total_conversations
         },
         
         personality: {
           known: knownData,
           missing: missingData,
           insights: insights,
-          mbtiScores: user.personality_data?.mbti_confidence_scores || {},
           interests: user.personality_data?.interests || [],
-          memories: await this.loadRecentMemories(userId)
+          memories: memories,
+          rawData: user.personality_data || {}
         },
         
         mission: {
-          primaryGoal: this.determinePrimaryGoal(progress, missingData),
-          dataNeeded: missingData.slice(0, 2), // Top 2 priorities
+          primaryGoal: this.determinePrimaryGoal(progress, missingData, messages.length),
+          dataNeeded: missingData.slice(0, 2),
           urgency: this.calculateUrgency(messages.length, progress),
           readyForCompass: progress.percentage >= 60 && !user.personality_data?.couple_compass_complete
         },
@@ -77,7 +84,8 @@ class GPTBrain {
           isFirstMessage: messages.length === 1,
           recentTopics: this.extractRecentTopics(conversationHistory),
           tone: conversationState.tone,
-          depth: conversationState.depth
+          depth: conversationState.depth,
+          history: conversationSummary
         },
         
         temporal: temporal,
@@ -90,20 +98,42 @@ class GPTBrain {
     }
   }
 
+  buildConversationSummary(conversationHistory) {
+    if (!conversationHistory || conversationHistory.length === 0) {
+      return "No previous conversations";
+    }
+
+    const summary = [];
+    conversationHistory.slice(-3).forEach(conv => {
+      const insights = conv.insights_discovered || {};
+      if (Object.keys(insights).length > 0) {
+        summary.push(`Previously discussed: ${Object.keys(insights).join(', ')}`);
+      }
+    });
+
+    return summary.length > 0 ? summary.join('. ') : "Had some conversations but no specific insights captured";
+  }
+
   assessKnownData(user, insights) {
     const known = {};
     const personalityData = user.personality_data || {};
     
+    // Check both personality_data and insight_map
+    
     // Love Language
     if (personalityData.love_language_hints?.length > 0) {
-      known.love_language = personalityData.love_language_hints[0];
+      known.love_language = personalityData.love_language_hints;
+    } else if (personalityData.love_language) {
+      known.love_language = [personalityData.love_language];
     } else if (insights.love_language?.value) {
-      known.love_language = insights.love_language.value;
+      known.love_language = [insights.love_language.value];
     }
     
     // Attachment Style
     if (personalityData.attachment_hints?.length > 0) {
-      known.attachment_style = personalityData.attachment_hints[0].replace('_tendency', '');
+      known.attachment_style = personalityData.attachment_hints[0];
+    } else if (personalityData.attachment_style) {
+      known.attachment_style = personalityData.attachment_style;
     } else if (insights.attachment_style?.value) {
       known.attachment_style = insights.attachment_style.value;
     }
@@ -111,11 +141,23 @@ class GPTBrain {
     // Values
     if (personalityData.values_discovered?.length > 0) {
       known.values = personalityData.values_discovered;
+    } else if (personalityData.values) {
+      known.values = Array.isArray(personalityData.values) ? personalityData.values : [personalityData.values];
     } else if (insights.values_alignment?.value) {
       known.values = [insights.values_alignment.value];
     }
     
-    // Add other dimensions similarly...
+    // Conflict Style
+    if (personalityData.conflict_style) {
+      known.conflict_style = personalityData.conflict_style;
+    } else if (insights.conflict_style?.value) {
+      known.conflict_style = insights.conflict_style.value;
+    }
+    
+    // Interests
+    if (personalityData.interests?.length > 0) {
+      known.interests = personalityData.interests;
+    }
     
     return known;
   }
@@ -123,19 +165,27 @@ class GPTBrain {
   identifyMissingData(knownData) {
     return this.dataPriorities.filter(priority => {
       const key = priority.replace(/_/g, '');
-      return !knownData[priority] && !knownData[key];
+      return !knownData[priority] && !knownData[key] && !knownData[priority.split('_')[0]];
     });
   }
 
   calculateProgress(knownData) {
     const total = this.dataPriorities.length;
-    const collected = Object.keys(knownData).length;
+    let collected = 0;
+    
+    // Count what we actually have
+    this.dataPriorities.forEach(priority => {
+      const key = priority.replace(/_/g, '');
+      if (knownData[priority] || knownData[key] || knownData[priority.split('_')[0]]) {
+        collected++;
+      }
+    });
     
     return {
       collected,
       total,
       percentage: Math.round((collected / total) * 100),
-      isComplete: collected >= total * 0.8 // 80% is enough
+      isComplete: collected >= total * 0.8
     };
   }
 
@@ -210,19 +260,21 @@ class GPTBrain {
   }
 
   extractRecentTopics(history) {
-    // Get last 3 conversations
     return history.slice(-3).map(conv => 
       conv.insights_discovered?.topics || []
     ).flat();
   }
 
-  determinePrimaryGoal(progress, missingData) {
+  determinePrimaryGoal(progress, missingData, messageCount) {
+    // If we have enough data but haven't offered Couple Compass, prioritize that
+    if (progress.percentage >= 60 && messageCount >= 6) {
+      return 'offer_couple_compass';
+    }
+    
     if (progress.percentage < 30) {
       return 'build_rapport';
     } else if (progress.percentage < 60) {
       return 'discover_core_traits';
-    } else if (progress.percentage >= 60) {
-      return 'prepare_for_compass';
     } else {
       return 'deepen_understanding';
     }
@@ -232,6 +284,7 @@ class GPTBrain {
     if (messageCount < 5) return 'low';
     if (messageCount < 10) return 'moderate';
     if (messageCount >= 10 && progress.percentage < 60) return 'high';
+    if (messageCount >= 8 && progress.percentage >= 60) return 'compass_ready';
     return 'ready';
   }
 
@@ -275,37 +328,42 @@ Current Context:
 - Time: ${context.temporal.timeOfDay} (${context.temporal.dayOfWeek})
 - Conversation: Message #${context.conversation.messageCount}
 - Their mood: ${context.conversation.tone}
-- Progress: ${context.progress.percentage}% ready for matching
+- Progress: ${context.progress.percentage}% ready (${context.progress.collected}/${context.progress.total} insights collected)
 
-What you know about them:
+What you ALREADY KNOW about them:
 ${this.formatKnownData(context.personality.known)}
 
 What you still need to discover:
-${context.personality.missing.slice(0, 3).join(', ')}
+${context.personality.missing.slice(0, 3).join(', ') || 'All major insights collected!'}
 
 ${this.getConversationGuidance(context)}
 
-Recent memories about them:
-${context.personality.memories.map(m => `- ${m.memory}`).join('\n')}
+Recent memories:
+${context.personality.memories.map(m => `- ${m.memory}`).join('\n') || 'No specific memories yet'}
 
-IMPORTANT RULES:
-1. Be naturally curious about ${context.mission.dataNeeded[0] || 'their relationship needs'}
-2. Reference what you know about them when relevant
-3. Keep responses warm, personal, and 2-3 sentences
-4. If they've shared enough (>60% data), suggest the Couple Compass quiz
-5. Never ask direct assessment questions - discover through natural conversation`;
+Past conversation summary:
+${context.conversation.history}
+
+CRITICAL RULES:
+1. NEVER ask about the same thing twice - check "What you ALREADY KNOW" before asking
+2. If you already know their values/love language/etc, build on it instead of asking again
+3. Be naturally curious about ${context.mission.dataNeeded[0] || 'their deeper feelings'}
+4. Reference what you know about them to show you remember
+5. Keep responses warm, personal, and 2-3 sentences`;
 
     // Add special instructions based on context
     if (context.user.isFirstTime) {
-      prompt += `\n\nThis is their FIRST message. Introduce yourself warmly as their personal matchmaker and include a natural ${context.temporal.timeOfDay} greeting.`;
+      prompt += `\n\nThis is their FIRST message. Introduce yourself warmly as their personal matchmaker.`;
+    } else if (context.conversation.isFirstMessage) {
+      prompt += `\n\nThis is a returning user! Reference something from their personality or past conversations.`;
     }
 
     if (context.temporal.timeSinceLastChat > 3) {
       prompt += `\n\nThey haven't chatted in ${context.temporal.timeSinceLastChat} days. Acknowledge this naturally.`;
     }
 
-    if (context.mission.readyForCompass) {
-      prompt += `\n\nThey're ready for the Couple Compass! Find a natural moment to suggest it.`;
+    if (context.mission.primaryGoal === 'offer_couple_compass' || context.mission.urgency === 'compass_ready') {
+      prompt += `\n\nCRITICAL: They've shared enough! Naturally transition to suggesting the Couple Compass. Say something like: "${context.user.name}, I've loved learning about your values and what matters to you in relationships. I think you're ready for something special - our Couple Compass. It's a quick 6-question journey that helps me understand exactly what you're looking for in a partner. Would you like to give it a try? 🧭"`;
     }
 
     return prompt;
@@ -316,15 +374,29 @@ IMPORTANT RULES:
       return 'Still getting to know them';
     }
     
-    return Object.entries(known)
-      .map(([key, value]) => {
-        const formatted = key.replace(/_/g, ' ');
-        if (Array.isArray(value)) {
-          return `- ${formatted}: ${value.join(', ')}`;
-        }
-        return `- ${formatted}: ${value}`;
-      })
-      .join('\n');
+    const formatted = [];
+    
+    if (known.love_language) {
+      formatted.push(`- Love language: ${Array.isArray(known.love_language) ? known.love_language.join(', ') : known.love_language}`);
+    }
+    
+    if (known.values) {
+      formatted.push(`- Values: ${Array.isArray(known.values) ? known.values.join(', ') : known.values}`);
+    }
+    
+    if (known.attachment_style) {
+      formatted.push(`- Attachment style: ${known.attachment_style}`);
+    }
+    
+    if (known.conflict_style) {
+      formatted.push(`- Conflict style: ${known.conflict_style}`);
+    }
+    
+    if (known.interests && known.interests.length > 0) {
+      formatted.push(`- Interests: ${known.interests.join(', ')}`);
+    }
+    
+    return formatted.join('\n') || 'Still getting to know them';
   }
 
   getConversationGuidance(context) {
@@ -333,14 +405,14 @@ IMPORTANT RULES:
     const guidance = {
       build_rapport: 'Focus on building connection and making them comfortable.',
       discover_core_traits: `Naturally explore their ${context.mission.dataNeeded[0] || 'relationship values'}.`,
-      prepare_for_compass: 'They have shared a lot! Look for an opportunity to suggest the Couple Compass.',
+      offer_couple_compass: 'Time to suggest the Couple Compass! They\'ve shared enough.',
       deepen_understanding: 'Continue building depth and connection.'
     };
 
     let message = guidance[primaryGoal] || guidance.build_rapport;
     
-    if (urgency === 'high') {
-      message += ' Be a bit more direct in guiding the conversation.';
+    if (urgency === 'high' || urgency === 'compass_ready') {
+      message += ' They\'ve been chatting for a while - guide toward next steps.';
     }
     
     return message;
@@ -386,7 +458,6 @@ IMPORTANT RULES:
           throw error;
         }
         
-        // Wait before retry
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
@@ -403,47 +474,52 @@ IMPORTANT RULES:
   // ==================== INSIGHT EXTRACTION ====================
 
   async extractInsights(userMessage, ariaResponse, context) {
-    const extractionPrompt = `Analyze this conversation and extract relationship-relevant insights.
+    // More specific extraction based on conversation
+    const extractionPrompt = `Analyze this conversation for relationship insights.
 
-User said: "${userMessage}"
+User "${context.user.name}" said: "${userMessage}"
 Aria responded: "${ariaResponse}"
-Context: User is ${context.progress.percentage}% ready for matching
 
-Extract any insights about:
-1. Love Language: How they express/receive love
-2. Attachment Style: How they form bonds (secure/anxious/avoidant)
-3. Values: What matters most to them
-4. Conflict Style: How they handle disagreements
-5. Lifestyle: Daily life preferences
-6. Emotional Needs: What they need from a partner
+Current known data: ${JSON.stringify(context.personality.known)}
+
+Extract NEW insights only (don't repeat what we already know):
+
+1. Love Language: Look for mentions of acts of service, words of affirmation, physical touch, quality time, or gifts
+2. Values: Look for what they say is important (honesty, loyalty, kindness, ambition, etc)
+3. Conflict Style: How they handle disagreements (avoid, discuss, need space, etc)
+4. Attachment Style: How they form bonds (secure, anxious, avoidant)
+5. Interests: Hobbies or activities they mention
+
+Examples from the message:
+- If they say "acts of service" or "helping with chores" → love_language: "acts_of_service"
+- If they say "loyalty and kindness matter" → values: ["loyalty", "kindness"]
+- If they say "I take a break during conflicts" → conflict_style: "need_space"
 
 Return ONLY a JSON object with discovered insights.
-Example: {"love_language": "acts_of_service", "values": ["growth", "authenticity"]}
-
-If no clear insights, return empty object: {}`;
+If nothing new found, return empty object: {}`;
 
     try {
       const response = await this.callGPT(
-        'You are an insight extraction system. Extract only clearly indicated information. Return valid JSON only.',
+        'You are an insight extraction system. Extract only clearly indicated information. Return valid JSON only, no other text.',
         extractionPrompt
       );
       
-      // Clean up the response to ensure it's valid JSON
+      // Clean and parse response
       let cleanedResponse = response.trim();
       
-      // Remove any markdown code blocks if present
       if (cleanedResponse.startsWith('```')) {
         cleanedResponse = cleanedResponse.replace(/```json?\n?/g, '').replace(/```\n?/g, '');
       }
       
-      // Remove any non-JSON content before or after
       const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         cleanedResponse = jsonMatch[0];
       }
       
       try {
-        return JSON.parse(cleanedResponse);
+        const insights = JSON.parse(cleanedResponse);
+        console.log('Extracted insights:', insights);
+        return insights;
       } catch (parseError) {
         console.error('Failed to parse insights:', cleanedResponse);
         return {};
@@ -460,6 +536,49 @@ If no clear insights, return empty object: {}`;
     if (!insights || Object.keys(insights).length === 0) return;
 
     try {
+      // Save to personality_data for immediate use
+      const user = await this.pool.query('SELECT personality_data FROM users WHERE user_id = $1', [userId]);
+      const currentData = user.rows[0]?.personality_data || {};
+      
+      // Merge insights into personality_data
+      const updatedData = { ...currentData };
+      
+      if (insights.love_language) {
+        updatedData.love_language = insights.love_language;
+        updatedData.love_language_hints = Array.isArray(insights.love_language) 
+          ? insights.love_language 
+          : [insights.love_language];
+      }
+      
+      if (insights.values) {
+        updatedData.values = insights.values;
+        updatedData.values_discovered = Array.isArray(insights.values) 
+          ? insights.values 
+          : [insights.values];
+      }
+      
+      if (insights.conflict_style) {
+        updatedData.conflict_style = insights.conflict_style;
+      }
+      
+      if (insights.attachment_style) {
+        updatedData.attachment_style = insights.attachment_style;
+        updatedData.attachment_hints = [insights.attachment_style];
+      }
+      
+      if (insights.interests) {
+        updatedData.interests = Array.isArray(insights.interests) 
+          ? insights.interests 
+          : [insights.interests];
+      }
+      
+      // Update user's personality_data
+      await this.pool.query(
+        'UPDATE users SET personality_data = $1 WHERE user_id = $2',
+        [JSON.stringify(updatedData), userId]
+      );
+      
+      // Also update insight map for structured queries
       for (const [key, value] of Object.entries(insights)) {
         if (this.dataPriorities.includes(key)) {
           await this.updateInsightMap(userId, key, value);
@@ -474,24 +593,29 @@ If no clear insights, return empty object: {}`;
     const insightData = {
       value: value,
       confidence: 0.8,
-      evidence: [`Discovered through natural conversation`]
+      evidence: [`Discovered through conversation`]
     };
 
     try {
+      // First ensure user exists in insight map
       await this.pool.query(`
-        INSERT INTO user_insight_map (user_id, ${insightType})
-        VALUES ($1, $2)
-        ON CONFLICT (user_id) DO UPDATE
-        SET ${insightType} = $2,
-            last_updated = CURRENT_TIMESTAMP
-      `, [userId, JSON.stringify(insightData)]);
+        INSERT INTO user_insight_map (user_id)
+        VALUES ($1)
+        ON CONFLICT (user_id) DO NOTHING
+      `, [userId]);
+      
+      // Then update the specific insight
+      await this.pool.query(`
+        UPDATE user_insight_map 
+        SET ${insightType} = $1, last_updated = CURRENT_TIMESTAMP
+        WHERE user_id = $2
+      `, [JSON.stringify(insightData), userId]);
     } catch (error) {
       console.error(`Error updating ${insightType}:`, error);
     }
   }
 
   async saveMemory(userId, userMessage, category = 'general') {
-    // Extract memorable facts
     const memorable = await this.extractMemorableFacts(userMessage);
     
     if (memorable.length > 0) {
@@ -512,11 +636,16 @@ If no clear insights, return empty object: {}`;
   async extractMemorableFacts(message) {
     const extractPrompt = `Extract specific personal facts from: "${message}"
     
-Return ONLY memorable facts like favorites, personal details, preferences.
-Example: ["Loves Italian food", "Has a sister", "Works in tech"]
-Return empty array if nothing memorable.
+Look for:
+- Personal preferences or favorites
+- Life situations or circumstances  
+- Specific details about their life
+- Relationship experiences
 
-Return valid JSON array only.`;
+Return memorable facts as JSON array.
+Example: ["prefers acts of service", "values loyalty highly", "takes breaks during conflicts"]
+
+Return empty array if nothing memorable: []`;
 
     try {
       const response = await this.callGPT(
@@ -524,15 +653,12 @@ Return valid JSON array only.`;
         extractPrompt
       );
       
-      // Clean up the response
       let cleanedResponse = response.trim();
       
-      // Remove markdown if present
       if (cleanedResponse.startsWith('```')) {
         cleanedResponse = cleanedResponse.replace(/```json?\n?/g, '').replace(/```\n?/g, '');
       }
       
-      // Extract array
       const arrayMatch = cleanedResponse.match(/\[[\s\S]*\]/);
       if (arrayMatch) {
         cleanedResponse = arrayMatch[0];
