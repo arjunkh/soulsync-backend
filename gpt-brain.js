@@ -437,7 +437,11 @@ Now generate your response:`;
     if (context.mission.primaryGoal === 'offer_couple_compass' || context.mission.urgency === 'compass_ready') {
       prompt += `\n\nCRITICAL: They've shared enough! Naturally transition to suggesting the Couple Compass. Say something like: "${context.user.name}, I've loved learning about your values and what matters to you in relationships. I think you're ready for something special - our Couple Compass. It's a quick 6-question journey that helps me understand exactly what you're looking for in a partner. Would you like to give it a try? 🧭"`;
     }
- 
+
+    console.log('=== SYSTEM PROMPT ===\n', prompt.substring(0, 1000), '\n=== END ===');
+    return prompt;
+  }
+
   formatKnownData(known) {
     if (Object.keys(known).length === 0) {
       return 'Still getting to know them';
