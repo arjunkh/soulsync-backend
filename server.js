@@ -66,7 +66,21 @@ pool.query('SELECT NOW()', (err, res) => {
   }
 });
 
-const gptBrain = new GPTBrain(pool, process.env.OPENAI_API_KEY);
+let gptBrain;
+try {
+  gptBrain = new GPTBrain(pool, process.env.OPENAI_API_KEY);
+  console.log('✅ GPT Brain initialized');
+} catch (error) {
+  console.error('❌ GPT Brain failed to initialize:', error.message);
+  // Create a fallback
+  gptBrain = {
+    buildCompleteContext: async () => ({}),
+    generateResponse: async () => "Hi! How can I help you today?",
+    extractInsights: async () => ({}),
+    saveInsights: async () => {},
+    saveMemory: async () => {}
+  };
+}
 
 // Enhanced database initialization with allowlist system
 async function initializeDatabase() {
