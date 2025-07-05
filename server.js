@@ -1975,6 +1975,29 @@ setTimeout(() => {
     console.log(`📡 Health check available at http://0.0.0.0:${PORT}/health`);
     console.log('✅ Server is now accepting connections');
   });
+
+  // Heartbeat and process event logging
+  let counter = 0;
+  setInterval(() => {
+    counter++;
+    console.log(`⏰ Heartbeat ${counter}: Process still alive at ${new Date().toISOString()}`);
+  }, 5000);
+
+  process.on('uncaughtException', (error) => {
+    console.error('💥 Uncaught Exception:', error);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  });
+
+  process.on('SIGTERM', () => {
+    console.log('🛑 Received SIGTERM from Railway');
+  });
+
+  process.on('SIGINT', () => {
+    console.log('🛑 Received SIGINT');
+  });
 }, 2000); // 2 second delay
 process.stdin.resume();
 setInterval(() => {}, 2147483647);
