@@ -517,8 +517,8 @@ Now generate your response:`;
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userMessage }
             ],
-            max_tokens: 150,
-            temperature: 0.8,
+            max_tokens: 200,
+            temperature: 0.5,
             presence_penalty: 0.3,
             frequency_penalty: 0.3
           })
