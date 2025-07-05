@@ -375,7 +375,9 @@ class GPTBrain {
     if (context.personality.known.couple_compass_complete) {
       coupleCompassStatus = 'COMPLETED ✓ - All 6 questions answered. NEVER offer Couple Compass again.';
     }
-
+// In gpt-brain.js, at the end of buildSystemPrompt()
+console.log('=== SYSTEM PROMPT ===\n', prompt.substring(0, 1000), '\n=== END ===');
+return prompt;
     // Get couple compass answers if they exist
     const compassAnswers = context.user.couple_compass_data || {};
 
