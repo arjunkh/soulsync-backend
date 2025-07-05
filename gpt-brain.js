@@ -72,7 +72,7 @@ class GPTBrain {
         },
         
         mission: {
-          primaryGoal: this.determinePrimaryGoal(progress, missingData, messages.length),
+          primaryGoal: this.determinePrimaryGoal(progress, missingData, messages.length, knownData),
           dataNeeded: missingData.slice(0, 2),
           urgency: this.calculateUrgency(messages.length, progress),
           readyForCompass: progress.percentage >= 60 && !user.personality_data?.couple_compass_complete
@@ -158,7 +158,15 @@ class GPTBrain {
     if (personalityData.interests?.length > 0) {
       known.interests = personalityData.interests;
     }
-    
+
+    // Check Couple Compass completion
+    if (
+      personalityData.couple_compass_complete ||
+      Object.keys(user.couple_compass_data || {}).length >= 6
+    ) {
+      known.couple_compass_complete = true;
+    }
+
     return known;
   }
 
@@ -265,12 +273,21 @@ class GPTBrain {
     ).flat();
   }
 
-  determinePrimaryGoal(progress, missingData, messageCount) {
+  determinePrimaryGoal(progress, missingData, messageCount, knownData) {
+    // Check if Couple Compass is already complete
+    if (knownData?.couple_compass_complete) {
+      return 'deepen_understanding';
+    }
+
     // If we have enough data but haven't offered Couple Compass, prioritize that
-    if (progress.percentage >= 60 && messageCount >= 6) {
+    if (
+      progress.percentage >= 60 &&
+      messageCount >= 6 &&
+      !knownData?.couple_compass_complete
+    ) {
       return 'offer_couple_compass';
     }
-    
+
     if (progress.percentage < 30) {
       return 'build_rapport';
     } else if (progress.percentage < 60) {
@@ -352,7 +369,12 @@ CRITICAL RULES:
 5. Keep responses warm, personal, and 2-3 sentences`;
 // Check if we need to ask about interests
 if (!context.personality.known.interests || context.personality.known.interests.length === 0) {
-  prompt += `\n\n6. They haven't shared any hobbies or interests yet. Find a natural way to ask what they enjoy doing in their free time.`;
+  prompt += `\n\n6. They haven't shared any hobbies or interests yet. Find a natural way to ask what they enjoy doing in their free time - what activities, hobbies, or pastimes bring them joy?`;
+}
+
+// Check if Couple Compass is already complete
+if (context.personality.known.couple_compass_complete) {
+  prompt += `\n\nCRITICAL: User has ALREADY completed the Couple Compass. Never offer it again. Focus on deepening the conversation about their life, dreams, and experiences.`;
 }
     // Add special instructions based on context
     if (context.user.isFirstTime) {
@@ -376,29 +398,37 @@ if (!context.personality.known.interests || context.personality.known.interests.
     if (Object.keys(known).length === 0) {
       return 'Still getting to know them';
     }
-    
+
     const formatted = [];
-    
+
     if (known.love_language) {
-      formatted.push(`- Love language: ${Array.isArray(known.love_language) ? known.love_language.join(', ') : known.love_language}`);
+      const languages = Array.isArray(known.love_language)
+        ? known.love_language
+        : [known.love_language];
+      formatted.push(`- Love languages: ${languages.join(' and ')}`);
     }
-    
+
     if (known.values) {
-      formatted.push(`- Values: ${Array.isArray(known.values) ? known.values.join(', ') : known.values}`);
+      const values = Array.isArray(known.values) ? known.values : [known.values];
+      formatted.push(`- Values: ${values.join(', ')}`);
     }
-    
+
     if (known.attachment_style) {
       formatted.push(`- Attachment style: ${known.attachment_style}`);
     }
-    
+
     if (known.conflict_style) {
-      formatted.push(`- Conflict style: ${known.conflict_style}`);
+      formatted.push(`- Conflict approach: ${known.conflict_style}`);
     }
-    
+
     if (known.interests && known.interests.length > 0) {
       formatted.push(`- Interests: ${known.interests.join(', ')}`);
     }
-    
+
+    if (known.couple_compass_complete) {
+      formatted.push(`- Couple Compass: Completed ✓`);
+    }
+
     return formatted.join('\n') || 'Still getting to know them';
   }
 
