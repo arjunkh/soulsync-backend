@@ -54,7 +54,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
-  max: 10
+  max: 20  // Increased for handling more concurrent users
 });
 
 // Test database connection immediately
@@ -1913,9 +1913,9 @@ app.post('/api/admin/add-phone', async (req, res) => {
     const countResult = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
     const currentCount = parseInt(countResult.rows[0].count);
     
-    if (currentCount >= 35) {
-      return res.status(400).json({ 
-        message: 'Allowlist is full (35/35). Remove a number first.' 
+    if (currentCount >= 75) {
+      return res.status(400).json({
+        message: 'Allowlist is full (75/75). Remove a number first.'
       });
     }
     
@@ -1934,7 +1934,7 @@ app.post('/api/admin/add-phone', async (req, res) => {
       success: true, 
       message: `Phone ${normalizedPhone} (${userName}) added to allowlist`,
       currentCount: currentCount + 1,
-      remaining: 34 - currentCount
+      remaining: 74 - currentCount
     });
     
   } catch (error) {
@@ -1965,7 +1965,7 @@ app.post('/api/admin/remove-phone', async (req, res) => {
       success: true, 
       message: `Phone ${normalizedPhone} removed from allowlist`,
       currentCount: currentCount,
-      available: 35 - currentCount
+      available: 75 - currentCount
     });
     
   } catch (error) {
@@ -1995,11 +1995,11 @@ app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
     `);
     
     const totalCount = allowlistResult.rows.length;
-    const available = 35 - totalCount;
+    const available = 75 - totalCount;
     
     res.json({
       totalAllowed: totalCount,
-      maxCapacity: 35,
+      maxCapacity: 75,
       available: available,
       allowlist: allowlistResult.rows.map(row => ({
         phone: row.phone_number,
@@ -2043,7 +2043,7 @@ app.get('/api/health', async (req, res) => {
       database_connected: true,
       database_time: dbTest.rows[0].now,
       allowlist_users: allowlistCount.rows[0].count,
-      allowlist_capacity: '35 users max',
+      allowlist_capacity: '75 users max',
       
       code_reduction: {
         original_lines: '~7000',
