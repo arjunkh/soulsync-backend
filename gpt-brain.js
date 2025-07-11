@@ -434,6 +434,32 @@ Now generate your response:`;
       prompt += `\n\nThey haven't chatted in ${context.temporal.timeSinceLastChat} days. Acknowledge this naturally.`;
     }
 
+    // Dynamic mission guidance based on what's missing
+    if (context.mission.dataNeeded.length > 0) {
+      const primaryNeed = context.mission.dataNeeded[0];
+
+      const missionGuidance = {
+        love_language: "Explore how they experience and express love. What makes them feel valued and appreciated in relationships.",
+        attachment_style: "Understand their comfort with intimacy and independence. How do they handle emotional closeness?",
+        values_alignment: "Discover what principles guide their life and what they'd need in a partner.",
+        conflict_style: "Learn how they navigate disagreements and handle relationship challenges.",
+        lifestyle_preferences: "Understand their daily rhythms, how they spend free time, their ideal life balance.",
+        emotional_needs: "Explore what support they need during tough times and how they prefer to be comforted."
+      };
+
+      prompt += `
+
+CONVERSATION GUIDANCE:
+Currently missing: ${primaryNeed.replace(/_/g, ' ')}
+Natural focus: ${missionGuidance[primaryNeed] || 'Learn more about this aspect of their personality.'}
+
+Let the conversation naturally explore this area. Build on what they share.
+Don't interrogate - discover through connection.
+
+Already known: ${Object.keys(context.personality.known).join(', ')}
+Don't revisit these topics.`;
+    }
+
     if (context.mission.primaryGoal === 'offer_couple_compass' || context.mission.urgency === 'compass_ready') {
       prompt += `\n\nCRITICAL: They've shared enough! Naturally transition to suggesting the Couple Compass. Say something like: "${context.user.name}, I've loved learning about your values and what matters to you in relationships. I think you're ready for something special - our Couple Compass. It's a quick 6-question journey that helps me understand exactly what you're looking for in a partner. Would you like to give it a try? 🧭"`;
     }
@@ -556,50 +582,36 @@ Now generate your response:`;
 
   async extractInsights(userMessage, ariaResponse, context) {
     // More specific extraction based on conversation
-    const extractionPrompt = `You are a relationship psychologist with deep understanding of human emotions and personality.
+    const extractionPrompt = `You are analyzing a conversation for specific psychological insights.
+
+EXACT DEFINITIONS:
+
+LOVE LANGUAGES (choose ONE primary):
+- words_of_affirmation: Needs verbal appreciation, "I love you", compliments
+- quality_time: Values undivided attention, doing activities together
+- acts_of_service: Feels loved when partner does helpful tasks
+- physical_touch: Needs hugs, holding hands, physical closeness
+- gifts: Values thoughtful presents, symbols of love
+
+ATTACHMENT STYLES (choose ONE):
+- secure: Comfortable with intimacy, trusts easily
+- anxious: Needs constant reassurance, fears abandonment
+- avoidant: Keeps emotional distance, very independent
+- disorganized: Inconsistent, both anxious and avoidant
 
 CONVERSATION TO ANALYZE:
 User "${context.user.name}" said: "${userMessage}"
 Aria responded: "${ariaResponse}"
 
-CONTEXT ABOUT THIS USER:
-- Known traits: ${JSON.stringify(context.personality.known)}
-- Interests: ${(context.personality.interests || []).join(', ') || 'none mentioned yet'}
-- Message #${context.conversation.messageCount} in conversation
-${context.personality.known.couple_compass_complete && context.user.couple_compass_data ? 
-  `- Couple Compass answers: ${JSON.stringify(context.user.couple_compass_data)}` : 
-  ''}
+EXTRACT AND RETURN:
+{
+  "love_language": "one_of_the_5_types_above_or_null",
+  "attachment_style": "one_of_the_4_types_above_or_null",
+  "values": ["single_word_values_if_mentioned"],
+  "interests": ["specific_activities_if_mentioned"]
+}
 
-EXTRACT DEEP INSIGHTS:
-
-1. Love Language Analysis:
-   - How does this person want to feel loved?
-   - What emotional needs are they expressing?
-   - If they mention activities (like movie nights), what emotional need does it fulfill?
-   - Don't look for keywords - understand their heart
-   
-2. MBTI Personality Patterns (infer naturally):
-   - Social energy: How do they recharge? (Introvert/Extrovert)
-   - Decision making: Heart or head? (Thinking/Feeling)
-   - Information style: Details or big picture? (Sensing/iNtuition)  
-   - Lifestyle: Planned or spontaneous? (Judging/Perceiving)
-   - Don't assign a type, just note patterns
-   
-3. Attachment Style:
-   - How do they describe relationships?
-   - What makes them feel secure or anxious?
-   
-4. Unspoken Insights:
-   - What did they reveal between the lines?
-   - What patterns emerge from their communication style?
-
-IMPORTANT: 
-- Return only genuine NEW insights discovered in this conversation
-- Don't repeat what's already known
-- If nothing new was revealed, return empty object: {}
-- Look for meaning, not keywords
-
-Return ONLY a JSON object with discovered insights. No other text.`;
+Return ONLY the JSON object. If nothing clearly indicates these insights, return {}`;
 
     try {
       const response = await this.callGPT(
