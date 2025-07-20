@@ -877,7 +877,7 @@ Aria 💕`
 
   getAttachmentDescription(style) {
     const descriptions = {
-      'secure': 'This means you're comfortable with intimacy and independence in healthy balance.',
+      'secure': 'This means you are comfortable with intimacy and independence in healthy balance.',
       'anxious': 'This means you deeply value closeness and may need extra reassurance in relationships.',
       'avoidant': 'This means you value your independence and may take time to open up fully.',
       'disorganized': 'This means you may have complex feelings about closeness and distance.',
