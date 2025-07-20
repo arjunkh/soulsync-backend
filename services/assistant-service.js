@@ -2,11 +2,20 @@ const { OpenAI } = require('openai');
 
 class AssistantService {
   constructor(pool) {
+    this.pool = pool;
+    this.assistantId = process.env.ARIA_ASSISTANT_ID;
+    
+    if (!this.assistantId) {
+      throw new Error('ARIA_ASSISTANT_ID not found in environment variables');
+    }
+    
     this.openai = new OpenAI({ 
       apiKey: process.env.OPENAI_API_KEY 
     });
-    this.pool = pool;
-    this.assistantId = process.env.ARIA_ASSISTANT_ID; // We'll set this
+    
+    // Retry configuration
+    this.maxRetries = 3;
+    this.retryDelay = 1000; // Start with 1 second
   }
 
   async getOrCreateThread(userId) {
@@ -18,17 +27,19 @@ class AssistantService {
       );
       
       if (result.rows[0]) {
-        console.log(`Found existing thread for user ${userId}`);
+        console.log(`Found existing thread for user ${userId}: ${result.rows[0].thread_id}`);
         return result.rows[0].thread_id;
       }
       
       // Create new thread for new user
       console.log(`Creating new thread for user ${userId}`);
-      const thread = await this.openai.beta.threads.create();
+      const thread = await this.retryOperation(async () => {
+        return await this.openai.beta.threads.create();
+      });
       
       // Save the mapping
       await this.pool.query(
-        'INSERT INTO user_threads (user_id, thread_id, created_at) VALUES ($1, $2, NOW())',
+        'INSERT INTO user_threads (user_id, thread_id, created_at, message_count) VALUES ($1, $2, NOW(), 0)',
         [userId, thread.id]
       );
       
@@ -56,58 +67,106 @@ class AssistantService {
           const contextMessage = `[USER CONTEXT: ${user.user_name}, ${user.age}, ${user.user_gender}]`;
 
           // Send context first
-          await this.openai.beta.threads.messages.create(threadId, {
-            role: 'user',
-            content: contextMessage
+          await this.retryOperation(async () => {
+            return await this.openai.beta.threads.messages.create(threadId, {
+              role: 'user',
+              content: contextMessage
+            });
           });
+          
+          console.log(`Sent context for new user ${userId}`);
         }
       }
 
       // Send the actual user message
-      await this.openai.beta.threads.messages.create(threadId, {
-        role: 'user',
-        content: message
+      await this.retryOperation(async () => {
+        return await this.openai.beta.threads.messages.create(threadId, {
+          role: 'user',
+          content: message
+        });
       });
 
       // Increment message count
-      await this.markThreadInitialized(userId);
+      await this.incrementMessageCount(userId);
 
       // Run the assistant
-      const run = await this.openai.beta.threads.runs.create(threadId, {
-        assistant_id: this.assistantId
+      const run = await this.retryOperation(async () => {
+        return await this.openai.beta.threads.runs.create(threadId, {
+          assistant_id: this.assistantId
+        });
       });
 
-      // Wait for completion
-      let runStatus = await this.openai.beta.threads.runs.retrieve(threadId, run.id);
+      // Wait for completion with timeout
+      const response = await this.waitForRunCompletion(threadId, run.id);
 
-      while (runStatus.status !== 'completed') {
-        if (runStatus.status === 'failed') {
-          throw new Error('Assistant run failed');
-        }
+      // Update last message timestamp
+      await this.pool.query(
+        'UPDATE user_threads SET last_message = NOW() WHERE user_id = $1',
+        [userId]
+      );
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        runStatus = await this.openai.beta.threads.runs.retrieve(threadId, run.id);
-      }
-
-      // Get the assistant's response
-      const messages = await this.openai.beta.threads.messages.list(threadId);
-      const latestMessage = messages.data[0];
-
-      if (latestMessage.role === 'assistant') {
-        // Update last message timestamp
-        await this.pool.query(
-          'UPDATE user_threads SET last_message = NOW() WHERE user_id = $1',
-          [userId]
-        );
-
-        return latestMessage.content[0].text.value;
-      }
-
-      throw new Error('No assistant response found');
+      return response;
 
     } catch (error) {
       console.error('Error in sendMessage:', error);
       throw error;
+    }
+  }
+
+  async waitForRunCompletion(threadId, runId, maxWaitTime = 30000) {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      const runStatus = await this.retryOperation(async () => {
+        return await this.openai.beta.threads.runs.retrieve(threadId, runId);
+      });
+
+      if (runStatus.status === 'completed') {
+        // Get the assistant's response
+        const messages = await this.retryOperation(async () => {
+          return await this.openai.beta.threads.messages.list(threadId, {
+            limit: 1
+          });
+        });
+        
+        const latestMessage = messages.data[0];
+
+        if (latestMessage && latestMessage.role === 'assistant') {
+          return latestMessage.content[0]?.text?.value || 'I understand.';
+        }
+        
+        throw new Error('No assistant response found');
+      }
+      
+      if (runStatus.status === 'failed') {
+        console.error('Assistant run failed:', runStatus);
+        throw new Error(`Assistant run failed: ${runStatus.last_error?.message || 'Unknown error'}`);
+      }
+      
+      if (runStatus.status === 'cancelled') {
+        throw new Error('Assistant run was cancelled');
+      }
+      
+      // Wait before checking again
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    throw new Error('Assistant run timed out');
+  }
+
+  async getRecentMessages(threadId, limit = 20) {
+    try {
+      const messages = await this.retryOperation(async () => {
+        return await this.openai.beta.threads.messages.list(threadId, {
+          limit: limit
+        });
+      });
+      
+      // Return in chronological order
+      return messages.data.reverse();
+    } catch (error) {
+      console.error('Error getting recent messages:', error);
+      return [];
     }
   }
 
@@ -127,11 +186,53 @@ class AssistantService {
     return result.rows[0];
   }
 
-  async markThreadInitialized(userId) {
+  async incrementMessageCount(userId) {
     await this.pool.query(
       'UPDATE user_threads SET message_count = message_count + 1 WHERE user_id = $1',
       [userId]
     );
+  }
+
+  // Retry helper with exponential backoff
+  async retryOperation(operation, attempt = 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= this.maxRetries) {
+        console.error(`Operation failed after ${this.maxRetries} attempts:`, error);
+        throw error;
+      }
+      
+      // Check if error is retryable
+      const isRetryable = error.status === 429 || // Rate limit
+                         error.status === 500 || // Server error
+                         error.status === 502 || // Bad gateway
+                         error.status === 503 || // Service unavailable
+                         error.status === 504 || // Gateway timeout
+                         error.code === 'ECONNRESET' ||
+                         error.code === 'ETIMEDOUT';
+      
+      if (!isRetryable) {
+        throw error;
+      }
+      
+      const delay = this.retryDelay * Math.pow(2, attempt - 1);
+      console.log(`Retrying operation in ${delay}ms (attempt ${attempt}/${this.maxRetries})`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return this.retryOperation(operation, attempt + 1);
+    }
+  }
+
+  // Health check method
+  async healthCheck() {
+    try {
+      // Try to retrieve assistant to verify connection
+      await this.openai.beta.assistants.retrieve(this.assistantId);
+      return { healthy: true, message: 'Assistant API connected' };
+    } catch (error) {
+      return { healthy: false, message: error.message };
+    }
   }
 }
 
