@@ -201,6 +201,25 @@ async function initializeDatabase() {
       )
     `);
 
+    // Add User Threads table for Assistant API integration
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_threads (
+        user_id VARCHAR(255) PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        thread_id VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_message TIMESTAMP,
+        message_count INTEGER DEFAULT 0,
+        extracted_data JSONB DEFAULT '{}',
+        last_extraction TIMESTAMP
+      )
+    `);
+
+    // Create index for faster lookups
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_user_threads_thread_id 
+      ON user_threads(thread_id)
+    `);
+
     // Add initial admin numbers
     await pool.query(`
       INSERT INTO phone_allowlist (phone_number, user_name, user_gender, added_by, notes, status)
