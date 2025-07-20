@@ -1,10 +1,11 @@
-// SoulSync AI Backend - Streamlined with GPT Brain
+// SoulSync AI Backend - Enhanced with Assistant Integration
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
-const GPTBrain = require('./gpt-brain');
-const app = express();
+const AssistantService = require('./services/assistant-service');
+// const GPTBrain = require('./gpt-brain'); // Commented out - emergency fallback only
 
+const app = express();
 let server;
 
 // Handle process termination gracefully
@@ -35,7 +36,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false
 }));
+
 app.use(express.json());
+
 // Error handler for malformed JSON
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
@@ -54,7 +57,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
-  max: 20  // Increased for handling more concurrent users
+  max: 20
 });
 
 // Test database connection immediately
@@ -66,23 +69,26 @@ pool.query('SELECT NOW()', (err, res) => {
   }
 });
 
-let gptBrain;
+// Initialize Assistant Service
+let assistantService;
 try {
-  gptBrain = new GPTBrain(pool, process.env.OPENAI_API_KEY);
-  console.log('✅ GPT Brain initialized');
+  assistantService = new AssistantService(pool);
+  console.log('✅ Assistant Service initialized');
 } catch (error) {
-  console.error('❌ GPT Brain failed to initialize:', error.message);
-  // Create a fallback
-  gptBrain = {
-    buildCompleteContext: async () => ({}),
-    generateResponse: async () => "Hi! How can I help you today?",
-    extractInsights: async () => ({}),
-    saveInsights: async () => {},
-    saveMemory: async () => {}
-  };
+  console.error('❌ Assistant Service failed to initialize:', error.message);
 }
 
-// Enhanced database initialization with allowlist system
+// Initialize GPT Brain as fallback (commented out)
+// let gptBrain;
+// try {
+//   const GPTBrain = require('./gpt-brain');
+//   gptBrain = new GPTBrain(pool, process.env.OPENAI_API_KEY);
+//   console.log('✅ GPT Brain initialized as fallback');
+// } catch (error) {
+//   console.error('❌ GPT Brain initialization failed:', error.message);
+// }
+
+// Enhanced database initialization
 async function initializeDatabase() {
   try {
     // Enhanced Users table with complete profile info
@@ -107,7 +113,8 @@ async function initializeDatabase() {
         birth_time TIME,
         birth_place VARCHAR(200),
         life_stage VARCHAR(20),
-        life_stage_flexibility VARCHAR(20) DEFAULT 'adjacent'
+        life_stage_flexibility VARCHAR(20) DEFAULT 'adjacent',
+        last_extraction_message_count INTEGER DEFAULT 0
       )
     `);
 
@@ -201,7 +208,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // Add User Threads table for Assistant API integration
+    // User Threads table for Assistant API integration
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_threads (
         user_id VARCHAR(255) PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
@@ -210,7 +217,8 @@ async function initializeDatabase() {
         last_message TIMESTAMP,
         message_count INTEGER DEFAULT 0,
         extracted_data JSONB DEFAULT '{}',
-        last_extraction TIMESTAMP
+        last_extraction TIMESTAMP,
+        extraction_count INTEGER DEFAULT 0
       )
     `);
 
@@ -248,7 +256,6 @@ initializeDatabase()
   .catch(error => {
     console.error('❌ Fatal: Database initialization failed:', error);
     console.error('Error details:', error.stack);
-    // Don't exit, let the app continue running
   });
 
 // Helper Functions
@@ -270,56 +277,6 @@ function normalizePhoneNumber(phone) {
   }
   
   return '+91' + cleaned;
-}
-
-// Response Validation Function - catches GPT mistakes
-function validateAndFixResponse(gptResponse, context) {
-  const violations = [];
-
-  // Check for Couple Compass offer when already complete
-  if (
-    context.personality.known.couple_compass_complete &&
-    gptResponse.toLowerCase().includes('couple compass')
-  ) {
-    violations.push('COUPLE_COMPASS_REPEAT');
-  }
-
-  // Check for asking about known interests
-  const knownInterests = context.personality.known.interests || [];
-  if (knownInterests.length > 0) {
-    const lowerResponse = gptResponse.toLowerCase();
-    for (const interest of knownInterests) {
-      if (
-        lowerResponse.includes(interest.toLowerCase()) &&
-        gptResponse.includes('?') &&
-        (lowerResponse.includes('prefer') ||
-          lowerResponse.includes('do you like') ||
-          lowerResponse.includes('what about'))
-      ) {
-        violations.push('ASKING_KNOWN_INFO');
-        break;
-      }
-    }
-  }
-
-  if (violations.length > 0) {
-    console.log('GPT Violations detected:', violations);
-
-    if (violations.includes('COUPLE_COMPASS_REPEAT')) {
-      const interests = context.personality.known.interests || [];
-      return `I see you've already completed our compatibility assessment! Based on your thoughtful answers, I'd love to explore what daily life looks like for you. ${
-        interests.includes('sports match') ? 'After those exciting match days with friends, ' : ''
-      }what helps you unwind and recharge?`;
-    }
-
-    if (violations.includes('ASKING_KNOWN_INFO')) {
-      return `I love that you enjoy ${knownInterests.join(
-        ' and '
-      )}! Building on that, I'm curious about your daily routines - are you more of a structured planner or do you prefer going with the flow?`;
-    }
-  }
-
-  return gptResponse; // No violations, return original
 }
 
 async function isPhoneAllowed(phoneNumber) {
@@ -531,6 +488,165 @@ async function getCoupleCompassProgress(userId) {
   }
 }
 
+// New: Extract insights from Assistant conversation
+async function extractInsightsFromAssistant(userId) {
+  try {
+    const threadData = await pool.query(
+      'SELECT thread_id, message_count FROM user_threads WHERE user_id = $1',
+      [userId]
+    );
+    
+    if (!threadData.rows[0]) return null;
+    
+    const { thread_id, message_count } = threadData.rows[0];
+    
+    // Get recent messages from thread
+    const messages = await assistantService.getRecentMessages(thread_id, 20);
+    
+    if (!messages || messages.length === 0) return null;
+    
+    // Format conversation for extraction
+    const conversationText = messages
+      .map(m => `${m.role}: ${m.content[0]?.text?.value || ''}`)
+      .join('\n');
+    
+    // Extract insights using GPT-4
+    const extractionPrompt = `Analyze this conversation between Aria (assistant) and a user to extract personality insights.
+
+Extract the following if present:
+1. Love Language (primary and secondary if mentioned): words_of_affirmation, quality_time, acts_of_service, physical_touch, gifts
+2. Attachment Style: secure, anxious, avoidant, disorganized
+3. Big Five personality traits (rate 0.0-1.0):
+   - openness (creativity, trying new things)
+   - conscientiousness (organized, planned)
+   - extraversion (social, outgoing)
+   - agreeableness (cooperative, trusting)
+   - neuroticism (emotional stability - low score means stable)
+4. Values (single words): family, career, adventure, stability, growth, etc.
+5. Interests/Hobbies: specific activities mentioned
+
+Return ONLY valid JSON. If something isn't clear from the conversation, omit it rather than guessing.`;
+
+    const extraction = await assistantService.openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        { role: 'system', content: extractionPrompt },
+        { role: 'user', content: conversationText }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3
+    });
+    
+    const insights = JSON.parse(extraction.choices[0].message.content);
+    
+    // Update database with new insights
+    if (Object.keys(insights).length > 0) {
+      const currentUser = await pool.query(
+        'SELECT personality_data FROM users WHERE user_id = $1',
+        [userId]
+      );
+      
+      const currentData = currentUser.rows[0]?.personality_data || {};
+      
+      // Merge insights intelligently
+      const mergedData = {
+        ...currentData,
+        ...insights,
+        // Preserve arrays by merging
+        values: [...new Set([...(currentData.values || []), ...(insights.values || [])])],
+        interests: [...new Set([...(currentData.interests || []), ...(insights.interests || [])])],
+        // Add extraction metadata
+        last_extraction: new Date().toISOString(),
+        extraction_message_count: message_count
+      };
+      
+      await pool.query(
+        'UPDATE users SET personality_data = $1, last_extraction_message_count = $2 WHERE user_id = $3',
+        [JSON.stringify(mergedData), message_count, userId]
+      );
+      
+      // Update extraction tracking
+      await pool.query(
+        'UPDATE user_threads SET last_extraction = NOW(), extraction_count = extraction_count + 1 WHERE user_id = $1',
+        [userId]
+      );
+      
+      console.log(`✅ Extracted insights for user ${userId}:`, insights);
+      return insights;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error extracting insights:', error);
+    return null;
+  }
+}
+
+// Check if it's time to extract insights (every 5 messages)
+async function shouldExtractInsights(userId) {
+  try {
+    const result = await pool.query(
+      `SELECT ut.message_count, u.last_extraction_message_count 
+       FROM user_threads ut 
+       JOIN users u ON ut.user_id = u.user_id 
+       WHERE ut.user_id = $1`,
+      [userId]
+    );
+    
+    if (!result.rows[0]) return false;
+    
+    const { message_count, last_extraction_message_count } = result.rows[0];
+    const messagesSinceExtraction = message_count - (last_extraction_message_count || 0);
+    
+    return messagesSinceExtraction >= 5;
+  } catch (error) {
+    console.error('Error checking extraction timing:', error);
+    return false;
+  }
+}
+
+// Check if ready for Couple Compass
+async function checkCompassReadiness(userId) {
+  try {
+    const user = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+    const userData = user.rows[0];
+    const personalityData = userData.personality_data || {};
+    
+    // Check if already completed
+    if (personalityData.couple_compass_complete || Object.keys(userData.couple_compass_data || {}).length >= 6) {
+      return { ready: false, reason: 'already_completed' };
+    }
+    
+    // Check minimum requirements
+    const hasLoveLanguage = personalityData.love_language || personalityData.love_language_hints?.length > 0;
+    const hasAttachment = personalityData.attachment_style || personalityData.attachment_hints?.length > 0;
+    const hasBigFive = personalityData.big_five && Object.keys(personalityData.big_five).length >= 3; // At least 3 traits
+    const hasValues = personalityData.values?.length > 0;
+    
+    // Check message count
+    const threadData = await pool.query('SELECT message_count FROM user_threads WHERE user_id = $1', [userId]);
+    const messageCount = threadData.rows[0]?.message_count || 0;
+    
+    const ready = hasLoveLanguage && hasAttachment && (hasBigFive || hasValues) && messageCount >= 8;
+    
+    return {
+      ready,
+      reason: ready ? 'all_criteria_met' : 'needs_more_conversation',
+      details: {
+        hasLoveLanguage,
+        hasAttachment,
+        hasBigFive,
+        hasValues,
+        messageCount,
+        minimumMessages: 8
+      }
+    };
+  } catch (error) {
+    console.error('Error checking Compass readiness:', error);
+    return { ready: false, reason: 'error' };
+  }
+}
+
 // Check if enough data is available to generate the personal report
 async function checkReportReadiness(userId) {
   try {
@@ -667,8 +783,12 @@ With this understanding, I can now focus on finding matches who truly align with
 class PersonalInsightReport {
   generateReport(userData, personalityData, coupleCompassData) {
     const { user_name, user_gender } = userData;
-    const loveLanguage = personalityData.love_language_hints?.[0] || 'quality time';
-    const attachment = personalityData.attachment_hints?.[0] || 'developing';
+    const loveLanguage = personalityData.love_language || personalityData.love_language_hints?.[0] || 'quality time';
+    const attachment = personalityData.attachment_style || personalityData.attachment_hints?.[0] || 'developing';
+    const bigFive = personalityData.big_five || {};
+    
+    // Generate personality description based on Big Five
+    const personalityDescription = this.generatePersonalityDescription(bigFive);
     
     return {
       title: `${user_name}'s Story`,
@@ -679,25 +799,29 @@ Over our conversations, I've had the privilege of getting to know the real you -
 
         personalityProfile: `**Your Personality Blueprint**
 
+${personalityDescription}
+
 You show up in the world with a unique blend of traits that make you who you are. What makes you special is your authentic approach to relationships and life.`,
 
         loveStyle: `**How You Love & Need to Be Loved**
 
-Your primary love language appears to be ${loveLanguage}. This means you feel most cherished when someone expresses love in this way.
+Your primary love language appears to be ${this.formatLoveLanguage(loveLanguage)}. This means you feel most cherished when someone expresses love in this way.
 
-Your attachment style leans ${attachment}, which shapes how you connect with others.`,
+Your attachment style leans ${attachment}, which shapes how you connect with others. ${this.getAttachmentDescription(attachment)}`,
 
         relationshipStrengths: `**Your Relationship Superpowers**
+
+${this.generateStrengths(personalityData, bigFive)}
 
 Your openness and authenticity are your greatest strengths. You know yourself well and aren't afraid to be genuine.`,
 
         growthAreas: `**Your Growth Edges**
 
-We all have areas where love challenges us to grow. Your journey is about continuing to be open while maintaining healthy boundaries.`,
+We all have areas where love challenges us to grow. ${this.generateGrowthAreas(bigFive, attachment)}`,
 
         idealPartner: `**Who You Need By Your Side**
 
-Based on everything you've shared, your ideal partner is someone who appreciates your authenticity and shares your values.`,
+Based on everything you've shared, your ideal partner is someone who ${this.generateIdealPartner(personalityData, coupleCompassData, bigFive)}.`,
 
         closing: `${user_name}, you are ready for the kind of love that sees you, celebrates you, and grows with you.
 
@@ -709,9 +833,117 @@ Aria 💕`
       generatedAt: new Date().toISOString()
     };
   }
+
+  generatePersonalityDescription(bigFive) {
+    let description = [];
+    
+    if (bigFive.openness > 0.7) {
+      description.push("You're a creative soul who loves exploring new ideas and experiences");
+    } else if (bigFive.openness < 0.3) {
+      description.push("You appreciate tradition and find comfort in the familiar");
+    }
+    
+    if (bigFive.conscientiousness > 0.7) {
+      description.push("Your organized and reliable nature makes others feel secure");
+    }
+    
+    if (bigFive.extraversion > 0.6) {
+      description.push("Your social energy lights up any room you enter");
+    } else if (bigFive.extraversion < 0.4) {
+      description.push("You have a quiet strength and prefer deep connections over large gatherings");
+    }
+    
+    if (bigFive.agreeableness > 0.7) {
+      description.push("Your compassionate heart naturally draws people to you");
+    }
+    
+    if (bigFive.neuroticism < 0.3) {
+      description.push("You have an admirable emotional stability that helps you weather life's storms");
+    }
+    
+    return description.join(". ") || "You have a balanced personality that adapts well to different situations.";
+  }
+
+  formatLoveLanguage(language) {
+    const formats = {
+      'words_of_affirmation': 'words of affirmation - hearing "I love you" and receiving compliments',
+      'quality_time': 'quality time - undivided attention and meaningful conversations',
+      'acts_of_service': 'acts of service - when someone does thoughtful things to help you',
+      'physical_touch': 'physical touch - hugs, holding hands, and physical closeness',
+      'gifts': 'receiving gifts - thoughtful presents that show someone was thinking of you'
+    };
+    return formats[language] || language;
+  }
+
+  getAttachmentDescription(style) {
+    const descriptions = {
+      'secure': 'This means you're comfortable with intimacy and independence in healthy balance.',
+      'anxious': 'This means you deeply value closeness and may need extra reassurance in relationships.',
+      'avoidant': 'This means you value your independence and may take time to open up fully.',
+      'disorganized': 'This means you may have complex feelings about closeness and distance.',
+      'developing': 'This is still developing as we learn more about your relationship patterns.'
+    };
+    return descriptions[style] || '';
+  }
+
+  generateStrengths(personalityData, bigFive) {
+    const strengths = [];
+    
+    if (bigFive.agreeableness > 0.6) {
+      strengths.push("Your empathy allows you to truly understand your partner's feelings");
+    }
+    
+    if (bigFive.conscientiousness > 0.6) {
+      strengths.push("You're someone a partner can count on - reliable and true to your word");
+    }
+    
+    if (personalityData.values?.includes('honesty')) {
+      strengths.push("Your commitment to honesty creates a foundation of trust");
+    }
+    
+    return strengths.join(".\n\n") || "Your unique combination of traits creates a strong foundation for lasting love.";
+  }
+
+  generateGrowthAreas(bigFive, attachment) {
+    if (attachment === 'anxious') {
+      return "Your journey is about trusting in love's permanence and giving your partner space to miss you.";
+    }
+    
+    if (attachment === 'avoidant') {
+      return "Your journey is about allowing yourself to be vulnerable and letting someone truly see you.";
+    }
+    
+    if (bigFive.neuroticism > 0.7) {
+      return "Your journey is about finding inner calm and not letting worry overshadow love's joy.";
+    }
+    
+    return "Your journey is about continuing to be open while maintaining healthy boundaries.";
+  }
+
+  generateIdealPartner(personalityData, coupleCompassData, bigFive) {
+    const traits = [];
+    
+    if (personalityData.love_language === 'quality_time') {
+      traits.push("prioritizes spending meaningful time with you");
+    }
+    
+    if (coupleCompassData.conflict_style === 'talk_out') {
+      traits.push("communicates openly when challenges arise");
+    }
+    
+    if (bigFive.extraversion < 0.4) {
+      traits.push("respects your need for quiet moments");
+    }
+    
+    if (personalityData.values?.includes('family')) {
+      traits.push("shares your vision of family");
+    }
+    
+    return traits.join(", ") || "appreciates your authenticity and shares your core values";
+  }
 }
 
-// PHASE 4: Basic Compatibility Engine
+// PHASE 4: Enhanced Compatibility Engine with Big Five
 class CompatibilityEngine {
   constructor() {
     this.absoluteDealbreakers = [
@@ -788,7 +1020,8 @@ class CompatibilityEngine {
           values: 0,
           emotional: 0,
           lifestyle: 0,
-          lifeStage: 0
+          lifeStage: 0,
+          personality: 0
         },
         topReasons: [dealbreakCheck.reason],
         recommendation: 'Not Compatible - ' + dealbreakCheck.reason
@@ -804,7 +1037,8 @@ class CompatibilityEngine {
         user2Data.love_languages || []
       ),
       lifestyle: this.calculateLifestyleMatch(user1Data, user2Data),
-      lifeStage: this.calculateLifeStageCompatibility(user1Data, user2Data)
+      lifeStage: this.calculateLifeStageCompatibility(user1Data, user2Data),
+      personality: this.calculateBigFiveMatch(user1Data.big_five, user2Data.big_five)
     };
 
     const overallScore = this.calculateOverallScore(scores);
@@ -822,6 +1056,41 @@ class CompatibilityEngine {
       topReasons: dealbreakCheck.hasRedFlag ? [dealbreakCheck.reason, ...reasons] : reasons,
       recommendation: this.getRecommendation(finalScore)
     };
+  }
+
+  calculateBigFiveMatch(bigFive1, bigFive2) {
+    if (!bigFive1 || !bigFive2) return 50;
+    
+    let totalScore = 0;
+    const weights = {
+      openness: 0.2,          // Similar creativity levels preferred
+      conscientiousness: 0.2,  // Similar organization preferred
+      extraversion: 0.2,       // Complementary can work
+      agreeableness: 0.25,     // Similar empathy levels important
+      neuroticism: 0.15        // Low combined score preferred
+    };
+    
+    Object.keys(weights).forEach(trait => {
+      const value1 = bigFive1[trait] || 0.5;
+      const value2 = bigFive2[trait] || 0.5;
+      const diff = Math.abs(value1 - value2);
+      
+      if (trait === 'extraversion') {
+        // Complementary can be good for extraversion
+        const score = (diff > 0.3 && diff < 0.7) ? 100 : (1 - diff) * 100;
+        totalScore += score * weights[trait];
+      } else if (trait === 'neuroticism') {
+        // Low combined neuroticism is best
+        const combined = value1 + value2;
+        const score = combined < 1 ? 100 : Math.max(0, (2 - combined) * 50);
+        totalScore += score * weights[trait];
+      } else {
+        // For other traits, similar is better
+        totalScore += (1 - diff) * 100 * weights[trait];
+      }
+    });
+    
+    return Math.round(totalScore);
   }
 
   calculateValueAlignment(compass1, compass2) {
@@ -939,10 +1208,11 @@ class CompatibilityEngine {
 
   calculateOverallScore(scores) {
     const weights = {
-      values: 0.35,
-      emotional: 0.25,
-      lifestyle: 0.20,
-      lifeStage: 0.20
+      values: 0.30,
+      emotional: 0.20,
+      lifestyle: 0.15,
+      lifeStage: 0.15,
+      personality: 0.20
     };
 
     let weightedScore = 0;
@@ -964,6 +1234,10 @@ class CompatibilityEngine {
       reasons.push("Your emotional styles complement each other perfectly");
     }
 
+    if (scores.personality > 80) {
+      reasons.push("Your personalities create a beautiful balance");
+    }
+
     if (scores.lifestyle > 70) {
       reasons.push("Your daily rhythms and lifestyle preferences sync naturally");
     }
@@ -982,7 +1256,7 @@ class CompatibilityEngine {
   }
 }
 
-// Life Stage Manager
+// Life Stage Manager (unchanged)
 class LifeStageManager {
   static getLifeStage(age) {
     if (!age || age < 20) return null;
@@ -1078,7 +1352,7 @@ class LifeStageManager {
   }
 }
 
-// PHASE 5: Match Profile Generator
+// PHASE 5: Match Profile Generator (enhanced with Big Five)
 class MatchProfileGenerator {
   generateMatchProfile(currentUser, matchUser, compatibilityData) {
     return {
@@ -1107,12 +1381,13 @@ What makes this interesting? ${compatibility.topReasons[0]}`;
     const highlights = [];
     const data = matchUser.personality_data || {};
     const compass = matchUser.couple_compass_data || {};
+    const bigFive = data.big_five || {};
 
     const lifeStageLabel = LifeStageManager.getLifeStageLabel(matchUser.life_stage);
     const lifeStageEmoji = LifeStageManager.getLifeStageEmoji(matchUser.life_stage);
     highlights.push(`${lifeStageEmoji} ${lifeStageLabel}`);
 
-    if (data.love_language_hints?.includes('quality_time')) {
+    if (data.love_language === 'quality_time' || data.love_language_hints?.includes('quality_time')) {
       highlights.push("📱 Will put their phone away when they're with you");
     }
 
@@ -1122,6 +1397,14 @@ What makes this interesting? ${compatibility.topReasons[0]}`;
 
     if (compass.financial_style === 'equal') {
       highlights.push("💰 Believes in true 50-50 partnership");
+    }
+
+    if (bigFive.openness > 0.7) {
+      highlights.push("🎨 Creative soul who loves trying new things");
+    }
+
+    if (bigFive.conscientiousness > 0.7) {
+      highlights.push("📅 Organized and keeps their promises");
     }
 
     return highlights.slice(0, 4);
@@ -1140,6 +1423,17 @@ What makes this interesting? ${compatibility.topReasons[0]}`;
     );
     if (attachmentMatch) {
       reasons.push(attachmentMatch);
+    }
+
+    // Add Big Five compatibility insight
+    const currentBig5 = currentUser.personality_data?.big_five || {};
+    const matchBig5 = matchUser.personality_data?.big_five || {};
+    
+    if (currentBig5.extraversion && matchBig5.extraversion) {
+      const diff = Math.abs(currentBig5.extraversion - matchBig5.extraversion);
+      if (diff > 0.4) {
+        reasons.push("Your different social energies could create a perfect balance - one brings adventure, the other brings calm");
+      }
     }
 
     return reasons;
@@ -1322,13 +1616,14 @@ function getCoupleCompassQuestionText(questionIndex) {
 // Helper function to calculate profile completeness
 function calculateProfileCompleteness(personalityData) {
   let score = 0;
-  let total = 5;
+  let total = 6; // Updated to include Big Five
   
-  if (personalityData?.love_language_hints?.length > 0) score++;
-  if (personalityData?.attachment_hints?.length > 0) score++;
-  if (personalityData?.values_discovered?.length > 0) score++;
+  if (personalityData?.love_language || personalityData?.love_language_hints?.length > 0) score++;
+  if (personalityData?.attachment_style || personalityData?.attachment_hints?.length > 0) score++;
+  if (personalityData?.values || personalityData?.values_discovered?.length > 0) score++;
   if (personalityData?.interests?.length > 0) score++;
   if (personalityData?.couple_compass_complete) score++;
+  if (personalityData?.big_five && Object.keys(personalityData.big_five).length >= 3) score++;
   
   return Math.round((score / total) * 100);
 }
@@ -1341,7 +1636,7 @@ const matchGenerator = new MatchProfileGenerator();
 
 // ==================== API ENDPOINTS ====================
 
-// Root endpoint - Railway often checks this
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
     message: 'SoulSync AI Backend is running',
@@ -1353,7 +1648,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoint for Railway
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -1429,18 +1724,22 @@ app.post('/api/verify-phone', async (req, res) => {
   }
 });
 
-// Main chat endpoint
+// Main chat endpoint - ENHANCED WITH ASSISTANT
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, userId = 'default', coupleCompassState: reqCoupleCompassState } = req.body;
     
-    // Initialize variables at the top
+    // Initialize variables
     let gameState = null;
     let coupleCompassState = reqCoupleCompassState || null;
     
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'OpenAI API key not configured on server' });
+    }
+
+    if (!assistantService) {
+      return res.status(500).json({ error: 'Assistant service not initialized' });
     }
 
     // Get or create user profile
@@ -1470,7 +1769,6 @@ app.post('/api/chat', async (req, res) => {
     const alreadyCompleted = hasCompletedCoupleCompass || hasAnsweredQuestions;
 
     if (alreadyCompleted && !gameState && !coupleCompassState?.active) {
-      // Prevent re-entering Couple Compass
       coupleCompassState = { active: false };
     }
 
@@ -1479,22 +1777,26 @@ app.post('/api/chat', async (req, res) => {
     const previousMessages = messages.slice(-3);
     const ariaLastMessage = previousMessages.find(m => m.role === 'assistant')?.content || '';
     const ariaMessageLower = ariaLastMessage.toLowerCase();
-    const ariaOfferedCompass = ariaMessageLower.includes('couple compass') && 
+    const ariaOfferedCompass = (ariaMessageLower.includes('couple compass') || 
+                                ariaMessageLower.includes('[compass_ready]')) && 
       (ariaMessageLower.includes('would you like') ||
        ariaMessageLower.includes('ready') ||
        ariaMessageLower.includes('want to try') ||
-       ariaMessageLower.includes('shall we start'));
+       ariaMessageLower.includes('shall we start') ||
+       ariaMessageLower.includes('you in?'));
 
     if (ariaOfferedCompass && !alreadyCompleted && !coupleCompassState?.active) {
       const userAcceptanceWords = ['yes', 'sure', 'ok', 'okay', 'let\'s go', 'lets go', 
                                   'let\'s do it', 'lets do it', 'absolutely', 'definitely', 
-                                  'yeah', 'yep', 'yup', 'start', 'begin', 'ready'];
+                                  'yeah', 'yep', 'yup', 'start', 'begin', 'ready', 'sounds good',
+                                  'sounds fun', "i'm in", 'im in'];
       
       const userMessage = latestUserMessage.content.toLowerCase();
       userAcceptedCompass = userAcceptanceWords.some(word => 
         userMessage.trim() === word || 
         userMessage.includes(`${word} `) ||
-        userMessage.includes(` ${word}`)
+        userMessage.includes(` ${word}`) ||
+        userMessage === word
       );
 
       if (userAcceptedCompass) {
@@ -1535,9 +1837,9 @@ app.post('/api/chat', async (req, res) => {
       if (validAnswers.includes(userAnswer)) {
         const progress = await getCoupleCompassProgress(userId);
 
-        if (progress.isComplete) {
-          coupleCompass.responses = progress.answers;
-
+        const currentQuestionIndex = progress.nextQuestionIndex;
+        if (currentQuestionIndex >= 6 || progress.isComplete) {
+          // Mark as complete
           await pool.query(`
             UPDATE users
             SET personality_data = jsonb_set(
@@ -1547,6 +1849,25 @@ app.post('/api/chat', async (req, res) => {
             )
             WHERE user_id = $1
           `, [userId]);
+
+          // Send completion info to Assistant thread
+          try {
+            const threadId = await assistantService.getOrCreateThread(userId);
+            const compassSummary = `[SYSTEM: User just completed Couple Compass with these preferences: 
+              Living: ${coupleCompassAnswers.living_arrangement || 'not specified'},
+              Finances: ${coupleCompassAnswers.financial_style || 'not specified'},
+              Children: ${coupleCompassAnswers.children_vision || 'not specified'},
+              Conflict: ${coupleCompassAnswers.conflict_style || 'not specified'},
+              Career Balance: ${coupleCompassAnswers.ambition_balance || 'not specified'},
+              Flexibility: ${coupleCompassAnswers.big_mismatch || 'not specified'}]`;
+            
+            await assistantService.openai.beta.threads.messages.create(threadId, {
+              role: 'user',
+              content: compassSummary
+            });
+          } catch (error) {
+            console.error('Error updating Assistant thread:', error);
+          }
 
           const reportReady = await checkReportReadiness(userId);
 
@@ -1564,18 +1885,6 @@ app.post('/api/chat', async (req, res) => {
               detectedMood: '',
               currentInterests: []
             }
-          });
-        }
-
-        const currentQuestionIndex = progress.nextQuestionIndex;
-        if (currentQuestionIndex >= 6) {
-          return res.json({
-            choices: [{
-              message: {
-                role: 'assistant',
-                content: "I apologize for the confusion. It looks like you've already completed all questions. Let me generate your results."
-              }
-            }]
           });
         }
 
@@ -1609,6 +1918,26 @@ app.post('/api/chat', async (req, res) => {
             )
             WHERE user_id = $1
           `, [userId]);
+
+          // Send completion to Assistant
+          try {
+            const threadId = await assistantService.getOrCreateThread(userId);
+            const finalAnswers = finalProgress.answers;
+            const compassSummary = `[SYSTEM: User just completed Couple Compass with preferences for:
+              Living: ${finalAnswers.living_arrangement},
+              Finances: ${finalAnswers.financial_style},
+              Children: ${finalAnswers.children_vision},
+              Conflict: ${finalAnswers.conflict_style},
+              Career: ${finalAnswers.ambition_balance},
+              Flexibility: ${finalAnswers.big_mismatch}]`;
+            
+            await assistantService.openai.beta.threads.messages.create(threadId, {
+              role: 'user',
+              content: compassSummary
+            });
+          } catch (error) {
+            console.error('Error updating Assistant thread:', error);
+          }
 
           return res.json({
             choices: [{
@@ -1659,64 +1988,38 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // Use GPT Brain for normal conversation (when NOT in Couple Compass)
+    // Use Assistant for normal conversation (when NOT in Couple Compass)
     if (!coupleCompassState?.active && !gameState?.active) {
       try {
-        const context = await gptBrain.buildCompleteContext(
-          userId,
-          messages,
-          user,
-          conversationHistory
-        );
-
-        let gptResponse = await gptBrain.generateResponse(
-          latestUserMessage.content,
-          context
-        );
-
-        // VALIDATE AND FIX RESPONSE BEFORE PROCESSING
-        gptResponse = validateAndFixResponse(gptResponse, context);
-        console.log('Response validated');
-
-        // Extract and save insights
-        const insights = await gptBrain.extractInsights(
-          latestUserMessage.content,
-          gptResponse,
-          context
-        );
-
-        // Periodic deep pattern review
-        const userMessageCount = messages.filter(m => m.role === 'user').length;
-        const patternInsights = await gptBrain.reviewConversationPatterns(
-          userId,
-          userMessageCount,
-          conversationHistory
-        );
-
-        // Merge pattern insights with regular insights
-        Object.assign(insights, patternInsights);
-
-        await gptBrain.saveInsights(userId, insights);
-        await gptBrain.saveMemory(userId, latestUserMessage.content);
-
-        // Add greeting for returning users
-        if (context.conversation.isFirstMessage && !context.user.isFirstTime) {
-          gptResponse = context.temporal.greeting + ' ' + user.user_name + '! ' + gptResponse;
-        }
-
-        // Check if GPT suggested Couple Compass and update user profile
-        if (gptResponse.toLowerCase().includes('couple compass') && !alreadyCompleted) {
-          await updateUserProfile(userId, {
-            couple_compass_invited: true
+        // Send message to Assistant
+        const assistantResponse = await assistantService.sendMessage(userId, latestUserMessage.content);
+        
+        // Check if it's time to extract insights
+        if (await shouldExtractInsights(userId)) {
+          // Run extraction in background
+          extractInsightsFromAssistant(userId).catch(error => {
+            console.error('Background extraction failed:', error);
           });
         }
-
+        
+        // Check if Assistant is suggesting Couple Compass
+        const compassReadiness = await checkCompassReadiness(userId);
+        let finalResponse = assistantResponse;
+        
+        if (compassReadiness.ready && !alreadyCompleted) {
+          // Check if Assistant naturally mentioned Couple Compass
+          if (!assistantResponse.toLowerCase().includes('couple compass')) {
+            // Add natural transition
+            finalResponse = assistantResponse + '\n\n[COMPASS_READY]';
+          }
+        }
+        
         // Save conversation
         await saveConversation(
           userId,
-          [latestUserMessage, { role: 'assistant', content: gptResponse }],
-          insights,
-          `Message ${messages.length}: Natural conversation`
+          [latestUserMessage, { role: 'assistant', content: finalResponse }],
+          {},
+          `Message ${messages.length}: Assistant conversation`
         );
 
         const reportReady = await checkReportReadiness(userId);
@@ -1725,7 +2028,7 @@ app.post('/api/chat', async (req, res) => {
           choices: [{
             message: {
               role: 'assistant',
-              content: gptResponse
+              content: finalResponse.replace('[COMPASS_READY]', "By the way, I think I'm getting to know you pretty well now! Would you like to try something fun? It's called the Couple Compass - just 6 quick questions that help me understand exactly what you're looking for in a partner. You in? 🧭")
             }
           }],
           userInsights: {
@@ -1739,19 +2042,27 @@ app.post('/api/chat', async (req, res) => {
           }
         });
       } catch (error) {
-        console.error('GPT Brain error:', error);
+        console.error('Assistant error:', error);
+        
+        // Emergency fallback - could uncomment GPT Brain here
+        // if (gptBrain) {
+        //   const context = await gptBrain.buildCompleteContext(userId, messages, user, conversationHistory);
+        //   const gptResponse = await gptBrain.generateResponse(latestUserMessage.content, context);
+        //   // ... handle GPT response ...
+        // }
+        
         return res.json({
           choices: [{
             message: { 
               role: 'assistant', 
-              content: "I'm having trouble thinking right now. Can you try again?" 
+              content: "I'm having a bit of trouble right now. Can you try again? 😊" 
             }
           }]
         });
       }
     }
 
-    // Default response if something goes wrong
+    // Default response
     return res.json({
       choices: [{
         message: { 
@@ -1764,6 +2075,34 @@ app.post('/api/chat', async (req, res) => {
   } catch (error) {
     console.error('Backend error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// New endpoint: Manual insight extraction
+app.post('/api/extract-insights/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const insights = await extractInsightsFromAssistant(userId);
+    
+    if (insights) {
+      res.json({
+        success: true,
+        insights: insights,
+        message: 'Insights extracted successfully'
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'No new insights found'
+      });
+    }
+  } catch (error) {
+    console.error('Manual extraction error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Extraction failed' 
+    });
   }
 });
 
@@ -1831,26 +2170,31 @@ app.get('/api/user-matches/:userId', async (req, res) => {
     }
     
     const user = userResult.rows[0];
+    const userData = user.personality_data || {};
     
     const potentialMatches = await findPotentialMatches(userId, user);
     
     const matchProfiles = [];
     
     for (const match of potentialMatches) {
+      const matchData = match.personality_data || {};
+      
       const compatibilityData = compatibilityEngine.calculateCompatibility(
         {
           couple_compass: user.couple_compass_data,
-          attachment_style: user.personality_data?.attachment_hints?.[0] || 'developing',
-          interests: user.personality_data?.interests || [],
-          love_languages: user.personality_data?.love_language_hints || [],
-          life_stage: user.life_stage
+          attachment_style: userData.attachment_style || userData.attachment_hints?.[0] || 'developing',
+          interests: userData.interests || [],
+          love_languages: userData.love_language ? [userData.love_language] : (userData.love_language_hints || []),
+          life_stage: user.life_stage,
+          big_five: userData.big_five || {}
         },
         {
           couple_compass: match.couple_compass_data,
-          attachment_style: match.personality_data?.attachment_hints?.[0] || 'developing',
-          interests: match.personality_data?.interests || [],
-          love_languages: match.personality_data?.love_language_hints || [],
-          life_stage: match.life_stage
+          attachment_style: matchData.attachment_style || matchData.attachment_hints?.[0] || 'developing',
+          interests: matchData.interests || [],
+          love_languages: matchData.love_language ? [matchData.love_language] : (matchData.love_language_hints || []),
+          life_stage: match.life_stage,
+          big_five: matchData.big_five || {}
         }
       );
       
@@ -1892,6 +2236,7 @@ app.get('/api/user-insights/:userId', async (req, res) => {
     }
     
     const userData = user.rows[0];
+    const personalityData = userData.personality_data || {};
     
     res.json({
       userId: userData.user_id,
@@ -1900,17 +2245,20 @@ app.get('/api/user-insights/:userId', async (req, res) => {
       phoneNumber: userData.phone_number,
       createdAt: userData.created_at,
       lastSeen: userData.last_seen,
-      personalityData: userData.personality_data,
+      personalityData: personalityData,
       coupleCompassData: userData.couple_compass_data,
       relationshipContext: userData.relationship_context,
       conversationCount: conversations.length,
       totalConversations: userData.total_conversations,
-      profileCompleteness: calculateProfileCompleteness(userData.personality_data),
+      profileCompleteness: calculateProfileCompleteness(personalityData),
       reportGenerated: userData.report_generated,
       yourStoryAvailable: userData.report_generated || false,
-      coupleCompassComplete: userData.personality_data?.couple_compass_complete || false,
-      loveLanguages: userData.personality_data?.love_language_hints || [],
-      attachmentStyle: userData.personality_data?.attachment_hints?.[0] || 'developing'
+      coupleCompassComplete: personalityData.couple_compass_complete || false,
+      loveLanguages: personalityData.love_language ? [personalityData.love_language] : (personalityData.love_language_hints || []),
+      attachmentStyle: personalityData.attachment_style || personalityData.attachment_hints?.[0] || 'developing',
+      bigFive: personalityData.big_five || {},
+      values: personalityData.values || [],
+      interests: personalityData.interests || []
     });
   } catch (error) {
     console.error('Error getting user insights:', error);
@@ -2006,9 +2354,12 @@ app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
         al.*,
         u.total_conversations,
         u.last_seen as user_last_seen,
-        u.profile_completeness
+        u.profile_completeness,
+        ut.message_count,
+        ut.last_extraction
       FROM phone_allowlist al
       LEFT JOIN users u ON al.phone_number = u.phone_number
+      LEFT JOIN user_threads ut ON u.user_id = ut.user_id
       WHERE al.status = 'active'
       ORDER BY al.added_at DESC
     `);
@@ -2030,6 +2381,8 @@ app.get('/api/admin/allowlist-status/:adminKey', async (req, res) => {
         lastAccess: row.last_access,
         totalSessions: row.total_sessions || 0,
         userConversations: row.total_conversations || 0,
+        assistantMessages: row.message_count || 0,
+        lastExtraction: row.last_extraction,
         profileCompleteness: row.profile_completeness || 0,
         status: row.user_last_seen ? 'Active User' : 'Not Started'
       }))
@@ -2046,16 +2399,18 @@ app.get('/api/health', async (req, res) => {
   try {
     const dbTest = await pool.query('SELECT NOW()');
     const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
+    const assistantStatus = assistantService ? 'Connected' : 'Not initialized';
     
     res.json({ 
-      status: 'SoulSync AI - Streamlined with GPT Brain ✨',
-      tagline: 'Intelligent conversations powered by GPT Brain',
+      status: 'SoulSync AI - Enhanced with Assistant Integration ✨',
+      tagline: 'Natural conversations powered by OpenAI Assistant',
       
       features_active: {
-        '🧠 GPT Brain': 'Natural conversation and insight extraction',
-        '🧭 Couple Compass': 'Life alignment assessment',
-        '📝 Reports': 'Personal insight generation',
-        '💑 Matchmaking': 'Compatibility analysis',
+        '🤖 Assistant': assistantStatus,
+        '🧠 Smart Extraction': 'Every 5 messages',
+        '🧭 Couple Compass': 'Intelligent triggering',
+        '📝 Enhanced Reports': 'With Big Five insights',
+        '💑 Smart Matching': 'Personality-based compatibility',
         '📱 Phone Verification': 'Secure access control'
       },
       
@@ -2064,11 +2419,11 @@ app.get('/api/health', async (req, res) => {
       allowlist_users: allowlistCount.rows[0].count,
       allowlist_capacity: '75 users max',
       
-      code_reduction: {
-        original_lines: '~7000',
-        current_lines: '~2400',
-        reduction: '66% cleaner code',
-        benefits: 'Easier maintenance, fewer bugs, better performance'
+      integration_status: {
+        assistant_api: assistantStatus,
+        extraction_enabled: true,
+        big_five_support: true,
+        gpt_brain_fallback: 'Available (commented out)'
       }
     });
   } catch (error) {
@@ -2095,6 +2450,7 @@ app.get('/api/test-db', async (req, res) => {
 
     const allowlistCount = await pool.query('SELECT COUNT(*) FROM phone_allowlist WHERE status = $1', ['active']);
     const userCount = await pool.query('SELECT COUNT(*) FROM users');
+    const threadCount = await pool.query('SELECT COUNT(*) FROM user_threads');
 
     res.json({
       status: 'Database connection successful! 🎉',
@@ -2104,7 +2460,8 @@ app.get('/api/test-db', async (req, res) => {
         tables_created: tablesResult.rows.map(row => row.table_name),
         allowlist_users: allowlistCount.rows[0].count,
         total_users: userCount.rows[0].count,
-        allowlist_capacity: '35 users max'
+        assistant_threads: threadCount.rows[0].count,
+        allowlist_capacity: '75 users max'
       }
     });
   } catch (error) {
@@ -2116,26 +2473,27 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+// Start server with delay
 setTimeout(() => {
   const PORT = process.env.PORT || 8080;
   server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`💕 SoulSync AI - Streamlined with GPT Brain`);
-    console.log('🧠 GPT Brain: Handles all conversation intelligence');
-    console.log('🧭 Couple Compass: Life alignment assessment');
-    console.log('📝 Reports: Personal insights generation');
-    console.log('💑 Matchmaking: Compatibility analysis');
-    console.log('✨ Code Reduction: 66% cleaner, more maintainable');
+    console.log(`💕 SoulSync AI - Enhanced with Assistant Integration`);
+    console.log('🤖 Assistant: Natural conversation memory');
+    console.log('🧠 Extraction: Insights every 5 messages');
+    console.log('🧭 Couple Compass: Smart triggering when ready');
+    console.log('📝 Reports: Enhanced with Big Five personality');
+    console.log('💑 Matching: Smarter compatibility with personality');
     console.log(`🚀 Running on http://0.0.0.0:${PORT}`);
     console.log(`📡 Health check available at http://0.0.0.0:${PORT}/health`);
     console.log('✅ Server is now accepting connections');
   });
 
-  // Heartbeat and process event logging
+  // Heartbeat logging
   let counter = 0;
   setInterval(() => {
     counter++;
-    console.log(`⏰ Heartbeat ${counter}: Process still alive at ${new Date().toISOString()}`);
-  }, 5000);
+    console.log(`⏰ Heartbeat ${counter}: Process alive at ${new Date().toISOString()}`);
+  }, 300000); // Every 5 minutes
 
   process.on('uncaughtException', (error) => {
     console.error('💥 Uncaught Exception:', error);
@@ -2153,5 +2511,6 @@ setTimeout(() => {
     console.log('🛑 Received SIGINT');
   });
 }, 2000); // 2 second delay
+
 process.stdin.resume();
 setInterval(() => {}, 2147483647);
