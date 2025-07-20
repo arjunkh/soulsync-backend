@@ -44,44 +44,94 @@ class AssistantService {
   async sendMessage(userId, message) {
     try {
       const threadId = await this.getOrCreateThread(userId);
-      
-      // Add the user's message to the thread
+
+      // Check if this is a brand new thread
+      const isNewThread = await this.isNewThread(userId);
+
+      if (isNewThread) {
+        // Get user details from database
+        const user = await this.getUserDetails(userId);
+
+        if (user) {
+          const contextMessage = `[USER CONTEXT: ${user.user_name}, ${user.age}, ${user.user_gender}]`;
+
+          // Send context first
+          await this.openai.beta.threads.messages.create(threadId, {
+            role: 'user',
+            content: contextMessage
+          });
+        }
+      }
+
+      // Send the actual user message
       await this.openai.beta.threads.messages.create(threadId, {
         role: 'user',
         content: message
       });
-      
+
+      // Increment message count
+      await this.markThreadInitialized(userId);
+
       // Run the assistant
       const run = await this.openai.beta.threads.runs.create(threadId, {
         assistant_id: this.assistantId
       });
-      
-      // Wait for the assistant to complete
+
+      // Wait for completion
       let runStatus = await this.openai.beta.threads.runs.retrieve(threadId, run.id);
-      
+
       while (runStatus.status !== 'completed') {
         if (runStatus.status === 'failed') {
           throw new Error('Assistant run failed');
         }
-        
+
         await new Promise(resolve => setTimeout(resolve, 1000));
         runStatus = await this.openai.beta.threads.runs.retrieve(threadId, run.id);
       }
-      
+
       // Get the assistant's response
       const messages = await this.openai.beta.threads.messages.list(threadId);
       const latestMessage = messages.data[0];
-      
+
       if (latestMessage.role === 'assistant') {
+        // Update last message timestamp
+        await this.pool.query(
+          'UPDATE user_threads SET last_message = NOW() WHERE user_id = $1',
+          [userId]
+        );
+
         return latestMessage.content[0].text.value;
       }
-      
+
       throw new Error('No assistant response found');
-      
+
     } catch (error) {
       console.error('Error in sendMessage:', error);
       throw error;
     }
+  }
+
+  async isNewThread(userId) {
+    const result = await this.pool.query(
+      'SELECT message_count FROM user_threads WHERE user_id = $1',
+      [userId]
+    );
+    return result.rows[0]?.message_count === 0;
+  }
+
+  async getUserDetails(userId) {
+    const result = await this.pool.query(
+      'SELECT user_name, age, user_gender FROM users WHERE user_id = $1',
+      [userId]
+    );
+    return result.rows[0];
+  }
+
+  async markThreadInitialized(userId) {
+    await this.pool.query(
+      'UPDATE user_threads SET message_count = message_count + 1 WHERE user_id = $1',
+      [userId]
+    );
   }
 }
 
