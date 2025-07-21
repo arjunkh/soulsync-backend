@@ -490,13 +490,19 @@ async function getCoupleCompassProgress(userId) {
 
 // New: Extract insights from Assistant conversation
 async function extractInsightsFromAssistant(userId) {
+  console.log(`🔍 Starting extraction for user ${userId} at ${new Date().toISOString()}`);
   try {
     const threadData = await pool.query(
       'SELECT thread_id, message_count FROM user_threads WHERE user_id = $1',
       [userId]
     );
     
-    if (!threadData.rows[0]) return null;
+    if (!threadData.rows[0]) {
+      console.error(`❌ No thread found for user ${userId}`);
+      return null;
+    }
+
+    console.log(`✅ Found thread ${threadData.rows[0].thread_id} with ${threadData.rows[0].message_count} messages`);
     
     const { thread_id, message_count } = threadData.rows[0];
     
@@ -577,28 +583,44 @@ Return ONLY valid JSON. If something isn't clear from the conversation, omit it 
     
     return null;
   } catch (error) {
-    console.error('Error extracting insights:', error);
+    console.error(`❌ Extraction failed for user ${userId}:`, error);
+    console.error('Error details:', error.response?.data || error.message);
     return null;
   }
 }
 
-// Check if it's time to extract insights (every 5 messages)
+// Check if it's time to extract insights
 async function shouldExtractInsights(userId) {
   try {
     const result = await pool.query(
-      `SELECT ut.message_count, u.last_extraction_message_count 
+      `SELECT 
+        ut.message_count, 
+        ut.created_at,
+        u.last_extraction_message_count,
+        ut.thread_id
        FROM user_threads ut 
        JOIN users u ON ut.user_id = u.user_id 
        WHERE ut.user_id = $1`,
       [userId]
     );
-    
-    if (!result.rows[0]) return false;
-    
-    const { message_count, last_extraction_message_count } = result.rows[0];
+
+    if (!result.rows[0]) {
+      console.log(`No thread found for user ${userId}`);
+      return false;
+    }
+
+    const { message_count, created_at, last_extraction_message_count, thread_id } = result.rows[0];
     const messagesSinceExtraction = message_count - (last_extraction_message_count || 0);
-    
-    return messagesSinceExtraction >= 5;
+    const conversationDuration = Date.now() - new Date(created_at).getTime();
+
+    // Extract after 15 messages OR 15 minutes
+    const shouldExtract = messagesSinceExtraction >= 15 || conversationDuration > 15 * 60 * 1000;
+
+    if (shouldExtract) {
+      console.log(`Extraction triggered for ${userId}: ${messagesSinceExtraction} messages, ${Math.round(conversationDuration/60000)} minutes`);
+    }
+
+    return shouldExtract;
   } catch (error) {
     console.error('Error checking extraction timing:', error);
     return false;
