@@ -28,7 +28,17 @@ class AssistantService {
       
       if (result.rows[0]) {
         console.log(`Found existing thread for user ${userId}: ${result.rows[0].thread_id}`);
-        return result.rows[0].thread_id;
+
+        // Verify thread still exists in OpenAI
+        try {
+          await this.openai.beta.threads.retrieve(result.rows[0].thread_id);
+          return result.rows[0].thread_id;
+        } catch (error) {
+          console.log(`Thread ${result.rows[0].thread_id} not found in OpenAI, creating new one`);
+          // Delete invalid record and create new
+          await this.pool.query('DELETE FROM user_threads WHERE user_id = $1', [userId]);
+          // Continue to create new thread below
+        }
       }
       
       // Create new thread for new user
@@ -99,9 +109,9 @@ class AssistantService {
       // Wait for completion with timeout
       const response = await this.waitForRunCompletion(threadId, run.id);
 
-      // Update last message timestamp
+      // Increment message count by 2 (user message + assistant response) and update timestamp
       await this.pool.query(
-        'UPDATE user_threads SET last_message = NOW() WHERE user_id = $1',
+        'UPDATE user_threads SET message_count = message_count + 2, last_message = NOW() WHERE user_id = $1',
         [userId]
       );
 
