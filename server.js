@@ -242,6 +242,11 @@ async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_users_life_stage ON users(life_stage)
     `);
 
+    // Add missing column for extraction tracking
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_extraction_message_count INTEGER DEFAULT 0
+    `);
+
     console.log('✅ Database tables initialized successfully');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
