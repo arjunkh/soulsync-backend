@@ -630,7 +630,7 @@ Return ONLY valid JSON. If something isn't clear from the conversation, omit it 
       
       // Update extraction tracking
       await pool.query(
-        'UPDATE user_threads SET last_extraction = NOW(), extraction_count = extraction_count + 1 WHERE user_id = $1',
+        'UPDATE user_threads SET last_extraction = NOW() WHERE user_id = $1',
         [userId]
       );
       
