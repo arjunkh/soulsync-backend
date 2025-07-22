@@ -592,8 +592,8 @@ Return ONLY valid JSON. If something isn't clear from the conversation, omit it 
           love_languages: [],
           attachment_style: mergedData["Attachment Style"] || null,
           big_five: mergedData["Big Five personality traits"] || {},
-          values: mergedData["Values"] || mergedData.values || [],
-          interests: mergedData["Interests/Hobbies"] || mergedData.interests || []
+          values: mergedData["Core Values"] || mergedData["Values"] || mergedData.values || [],
+          interests: mergedData["Interests / Hobbies"] || mergedData["Interests/Hobbies"] || mergedData.interests || []
         };
 
         // Convert Love Language object to array
@@ -697,10 +697,13 @@ async function checkCompassReadiness(userId) {
     }
     
     // Check minimum requirements
-    const hasLoveLanguage = personalityData.love_language || personalityData.love_language_hints?.length > 0;
-    const hasAttachment = personalityData.attachment_style || personalityData.attachment_hints?.length > 0;
-    const hasBigFive = personalityData.big_five && Object.keys(personalityData.big_five).length >= 3; // At least 3 traits
-    const hasValues = personalityData.values?.length > 0;
+    const hasLoveLanguage = personalityData["Love Language"] || userData.love_languages?.length > 0;
+    const hasAttachment = personalityData["Attachment Style"] || userData.attachment_style;
+    const hasBigFive = (personalityData["Big Five personality traits"] && Object.keys(personalityData["Big Five personality traits"]).length >= 3) || 
+                       (userData.big_five && Object.keys(userData.big_five).length >= 3); // At least 3 traits
+    const hasValues = personalityData["Values"]?.length > 0 || 
+                      personalityData["Core Values"]?.length > 0 || 
+                      userData.values?.length > 0;
     
     // Check message count
     const threadData = await pool.query('SELECT message_count FROM user_threads WHERE user_id = $1', [userId]);
@@ -1695,15 +1698,20 @@ function getCoupleCompassQuestionText(questionIndex) {
 // Helper function to calculate profile completeness
 function calculateProfileCompleteness(personalityData) {
   let score = 0;
-  let total = 6; // Updated to include Big Five
-  
-  if (personalityData?.love_language || personalityData?.love_language_hints?.length > 0) score++;
-  if (personalityData?.attachment_style || personalityData?.attachment_hints?.length > 0) score++;
-  if (personalityData?.values || personalityData?.values_discovered?.length > 0) score++;
-  if (personalityData?.interests?.length > 0) score++;
+  let total = 6;
+
+  // Check both personality_data fields and root fields
+  if (personalityData?.["Love Language"] || personalityData?.love_languages?.length > 0) score++;
+  if (personalityData?.["Attachment Style"] || personalityData?.attachment_style) score++;
+  if ((personalityData?.["Core Values"] && personalityData["Core Values"].length > 0) || 
+      (personalityData?.["Values"] && personalityData["Values"].length > 0) || 
+      (personalityData?.values && personalityData.values.length > 0)) score++;
+  if ((personalityData?.["Interests / Hobbies"] && personalityData["Interests / Hobbies"].length > 0) || 
+      (personalityData?.["Interests/Hobbies"] && personalityData["Interests/Hobbies"].length > 0) || 
+      (personalityData?.interests && personalityData.interests.length > 0)) score++;
   if (personalityData?.couple_compass_complete) score++;
-  if (personalityData?.big_five && Object.keys(personalityData.big_five).length >= 3) score++;
-  
+  if (personalityData?.["Big Five personality traits"] || personalityData?.big_five) score++;
+
   return Math.round((score / total) * 100);
 }
 
