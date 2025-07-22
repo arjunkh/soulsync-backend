@@ -247,6 +247,16 @@ async function initializeDatabase() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS last_extraction_message_count INTEGER DEFAULT 0
     `);
 
+    // Ensure root level personality fields exist
+    await pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS love_languages TEXT[] DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS attachment_style VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS big_five JSONB DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS values TEXT[] DEFAULT '{}',
+      ADD COLUMN IF NOT EXISTS interests TEXT[] DEFAULT '{}'
+    `);
+
     console.log('✅ Database tables initialized successfully');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
@@ -575,6 +585,48 @@ Return ONLY valid JSON. If something isn't clear from the conversation, omit it 
         'UPDATE users SET personality_data = $1, last_extraction_message_count = $2 WHERE user_id = $3',
         [JSON.stringify(mergedData), message_count, userId]
       );
+
+      // Sync extracted data to root fields for system compatibility
+      try {
+        const syncedData = {
+          love_languages: [],
+          attachment_style: mergedData["Attachment Style"] || null,
+          big_five: mergedData["Big Five personality traits"] || {},
+          values: mergedData["Values"] || mergedData.values || [],
+          interests: mergedData["Interests/Hobbies"] || mergedData.interests || []
+        };
+
+        // Convert Love Language object to array
+        if (mergedData["Love Language"]) {
+          const ll = mergedData["Love Language"];
+          if (ll.primary) syncedData.love_languages.push(ll.primary);
+          if (ll.secondary) syncedData.love_languages.push(ll.secondary);
+        }
+
+        // Update root fields
+        await pool.query(
+          `UPDATE users 
+           SET love_languages = $1,
+               attachment_style = $2,
+               big_five = $3,
+               values = $4,
+               interests = $5
+           WHERE user_id = $6`,
+          [
+            syncedData.love_languages,
+            syncedData.attachment_style,
+            syncedData.big_five,
+            syncedData.values,
+            syncedData.interests,
+            userId
+          ]
+        );
+
+        console.log(`✅ Synced extraction data to root fields for user ${userId}`);
+      } catch (syncError) {
+        console.error(`❌ Failed to sync extraction data for user ${userId}:`, syncError);
+        // Don't throw - extraction succeeded even if sync fails
+      }
       
       // Update extraction tracking
       await pool.query(
