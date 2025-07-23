@@ -531,34 +531,105 @@ async function extractInsightsFromAssistant(userId) {
       .map(m => `${m.role}: ${m.content[0]?.text?.value || ''}`)
       .join('\n');
     
-    // Extract insights using GPT-4
-    const extractionPrompt = `Analyze this conversation between Aria (assistant) and a user to extract personality insights.
+    // Extract insights using GPT-4 with validation and retries
+    // Enhanced extraction prompt with strict format requirements
+    const extractionPrompt = `You are analyzing a conversation between Aria (a relationship assistant) and a user. Extract personality insights.
 
-Extract the following if present:
-1. Love Language (primary and secondary if mentioned): words_of_affirmation, quality_time, acts_of_service, physical_touch, gifts
-2. Attachment Style: secure, anxious, avoidant, disorganized
-3. Big Five personality traits (rate 0.0-1.0):
-   - openness (creativity, trying new things)
-   - conscientiousness (organized, planned)
-   - extraversion (social, outgoing)
-   - agreeableness (cooperative, trusting)
-   - neuroticism (emotional stability - low score means stable)
-4. Values (single words): family, career, adventure, stability, growth, etc.
-5. Interests/Hobbies: specific activities mentioned
+CRITICAL REQUIREMENTS:
+1. Return ONLY valid JSON - no explanation or text outside the JSON
+2. Only include a key if data is clearly mentioned. If not mentioned, omit the key completely
+3. Use snake_case for ALL keys and string values
+4. Include ALL mentioned items - don't pick just one
 
-Return ONLY valid JSON. If something isn't clear from the conversation, omit it rather than guessing.`;
+Required format:
+{
+  "love_languages": ["array_of_all_mentioned"],
+  "attachment_style": "single_value",
+  "big_five": {
+    "openness": 0.0 to 1.0,
+    "conscientiousness": 0.0 to 1.0,
+    "extraversion": 0.0 to 1.0,
+    "agreeableness": 0.0 to 1.0,
+    "neuroticism": 0.0 to 1.0
+  },
+  "values": ["array_of_values"],
+  "interests": ["array_of_interests"]
+}
 
-    const extraction = await assistantService.openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        { role: 'system', content: extractionPrompt },
-        { role: 'user', content: conversationText }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3
-    });
-    
-    const insights = JSON.parse(extraction.choices[0].message.content);
+RULES:
+- Valid love_languages: words_of_affirmation, quality_time, acts_of_service, physical_touch, gifts
+- Valid attachment_style: secure, anxious, avoidant, disorganized
+- For big_five: Include ALL 5 traits or omit the entire object
+- Use snake_case for values too (e.g., "personal_growth" not "personal growth")
+- If user says "acts of service and quality time", return ["acts_of_service", "quality_time"]
+
+Example valid output:
+{
+  "love_languages": ["quality_time", "acts_of_service"],
+  "attachment_style": "secure",
+  "big_five": {
+    "openness": 0.7,
+    "conscientiousness": 0.5,
+    "extraversion": 0.8,
+    "agreeableness": 0.9,
+    "neuroticism": 0.3
+  },
+  "values": ["family", "growth", "honesty"],
+  "interests": ["cooking", "hiking", "reading"]
+}`;
+
+    // Extraction with validation and retry
+    let insights = {};
+    let extractionSuccessful = false;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const extraction = await assistantService.openai.chat.completions.create({
+          model: 'gpt-4-turbo-preview',
+          messages: [
+            { role: 'system', content: extractionPrompt },
+            { role: 'user', content: conversationText }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3
+        });
+
+        const rawInsights = JSON.parse(extraction.choices[0].message.content);
+
+        // Validate structure
+        const isValid =
+          (!rawInsights.love_languages || Array.isArray(rawInsights.love_languages)) &&
+          (!rawInsights.values || Array.isArray(rawInsights.values)) &&
+          (!rawInsights.interests || Array.isArray(rawInsights.interests)) &&
+          (!rawInsights.attachment_style || typeof rawInsights.attachment_style === 'string') &&
+          (!rawInsights.big_five || (typeof rawInsights.big_five === 'object' &&
+            rawInsights.big_five.openness !== undefined &&
+            rawInsights.big_five.conscientiousness !== undefined &&
+            rawInsights.big_five.extraversion !== undefined &&
+            rawInsights.big_five.agreeableness !== undefined &&
+            rawInsights.big_five.neuroticism !== undefined));
+
+        if (isValid) {
+          insights = rawInsights;
+          extractionSuccessful = true;
+          console.log(`✅ Extraction validated successfully on attempt ${attempt + 1}`);
+          break;
+        } else {
+          console.error(`❌ Invalid structure on attempt ${attempt + 1}`, rawInsights);
+          if (attempt < 2) {
+            // Add clearer instructions for retry
+            extractionPrompt += "\n\nREMINDER: Arrays must be arrays [], not objects. Use exact key names shown above. Big Five must have ALL 5 traits.";
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Extraction attempt ${attempt + 1} failed:`, error);
+      }
+    }
+
+    if (!extractionSuccessful) {
+      console.error('❌ All extraction attempts failed');
+      return null;
+    }
     
     // Update database with new insights
     if (Object.keys(insights).length > 0) {
@@ -590,17 +661,57 @@ Return ONLY valid JSON. If something isn't clear from the conversation, omit it 
       try {
         const syncedData = {
           love_languages: [],
-          attachment_style: mergedData["Attachment Style"] || null,
-          big_five: mergedData["Big Five personality traits"] || {},
-          values: mergedData["Core Values"] || mergedData["Values"] || mergedData.values || [],
-          interests: mergedData["Interests / Hobbies"] || mergedData["Interests/Hobbies"] || mergedData.interests || []
+          attachment_style: null,
+          big_five: {},
+          values: [],
+          interests: []
         };
 
-        // Convert Love Language object to array
-        if (mergedData["Love Language"]) {
-          const ll = mergedData["Love Language"];
-          if (ll.primary) syncedData.love_languages.push(ll.primary);
-          if (ll.secondary) syncedData.love_languages.push(ll.secondary);
+        // Handle NEW format (from updated extraction)
+        if (mergedData.love_languages) {
+          syncedData.love_languages = mergedData.love_languages;
+        }
+        if (mergedData.attachment_style) {
+          syncedData.attachment_style = mergedData.attachment_style;
+        }
+        if (mergedData.big_five) {
+          syncedData.big_five = mergedData.big_five;
+        }
+        if (mergedData.values) {
+          syncedData.values = mergedData.values;
+        }
+        if (mergedData.interests) {
+          syncedData.interests = mergedData.interests;
+        }
+
+        // Handle OLD format (for backwards compatibility)
+        if (!syncedData.love_languages.length && mergedData["Love Language"]) {
+          if (Array.isArray(mergedData["Love Language"])) {
+            syncedData.love_languages = mergedData["Love Language"];
+          } else if (typeof mergedData["Love Language"] === 'object') {
+            if (mergedData["Love Language"].primary) {
+              syncedData.love_languages.push(mergedData["Love Language"].primary);
+            }
+            if (mergedData["Love Language"].secondary) {
+              syncedData.love_languages.push(mergedData["Love Language"].secondary);
+            }
+          }
+        }
+
+        if (!syncedData.attachment_style && mergedData["Attachment Style"]) {
+          syncedData.attachment_style = mergedData["Attachment Style"];
+        }
+
+        if (Object.keys(syncedData.big_five).length === 0 && mergedData["Big Five personality traits"]) {
+          syncedData.big_five = mergedData["Big Five personality traits"];
+        }
+
+        if (!syncedData.values.length) {
+          syncedData.values = mergedData["Core Values"] || mergedData["Values"] || [];
+        }
+
+        if (!syncedData.interests.length) {
+          syncedData.interests = mergedData["Interests / Hobbies"] || mergedData["Interests/Hobbies"] || [];
         }
 
         // Update root fields
@@ -623,6 +734,7 @@ Return ONLY valid JSON. If something isn't clear from the conversation, omit it 
         );
 
         console.log(`✅ Synced extraction data to root fields for user ${userId}`);
+        console.log('Synced data:', JSON.stringify(syncedData, null, 2));
       } catch (syncError) {
         console.error(`❌ Failed to sync extraction data for user ${userId}:`, syncError);
         // Don't throw - extraction succeeded even if sync fails
@@ -2337,15 +2449,15 @@ app.get('/api/user-insights/:userId', async (req, res) => {
       relationshipContext: userData.relationship_context,
       conversationCount: conversations.length,
       totalConversations: userData.total_conversations,
-      profileCompleteness: calculateProfileCompleteness(personalityData),
+      profileCompleteness: calculateProfileCompleteness(userData),
       reportGenerated: userData.report_generated,
       yourStoryAvailable: userData.report_generated || false,
       coupleCompassComplete: personalityData.couple_compass_complete || false,
-      loveLanguages: personalityData.love_language ? [personalityData.love_language] : (personalityData.love_language_hints || []),
-      attachmentStyle: personalityData.attachment_style || personalityData.attachment_hints?.[0] || 'developing',
-      bigFive: personalityData.big_five || {},
-      values: personalityData.values || [],
-      interests: personalityData.interests || []
+      loveLanguages: userData.love_languages || [],
+      attachmentStyle: userData.attachment_style || 'developing',
+      bigFive: userData.big_five || {},
+      values: userData.values || [],
+      interests: userData.interests || []
     });
   } catch (error) {
     console.error('Error getting user insights:', error);
