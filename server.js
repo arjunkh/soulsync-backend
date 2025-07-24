@@ -893,6 +893,7 @@ async function checkReportReadiness(userId) {
     });
 
     if (hasLoveLanguage && hasValues && hasCompass) {
+      // Prepare data for report generation
       const reportData = {
         ...userData,
         personality_data: {
@@ -905,7 +906,8 @@ async function checkReportReadiness(userId) {
         }
       };
 
-      const report = reportGenerator.generateReport(
+      // Generate report with GPT - NOTE THE AWAIT!
+      const report = await reportGenerator.generateReport(
         userData,
         reportData.personality_data,
         coupleCompassData
@@ -1021,167 +1023,104 @@ With this understanding, I can now focus on finding matches who truly align with
   }
 }
 
-// PHASE 3: Report Generation System
+// PHASE 3: Report Generation System - GPT-Based
 class PersonalInsightReport {
-  generateReport(userData, personalityData, coupleCompassData) {
-    const { user_name, user_gender } = userData;
-    const loveLanguage = personalityData.love_language || personalityData.love_language_hints?.[0] || 'quality time';
-    const attachment = personalityData.attachment_style || personalityData.attachment_hints?.[0] || 'developing';
-    const bigFive = personalityData.big_five || {};
-    
-    // Generate personality description based on Big Five
-    const personalityDescription = this.generatePersonalityDescription(bigFive);
-    
-    return {
-      title: `${user_name}'s Story`,
-      sections: {
-        introduction: `Dear ${user_name},
+  async generateReport(userData, personalityData, coupleCompassData) {
+    try {
+      const { user_name, user_gender, age } = userData;
 
-Over our conversations, I've had the privilege of getting to know the real you - not just what you say, but how you think, feel, and love. This report is my love letter to your beautiful complexity.`,
+      // Build comprehensive prompt
+      const reportPrompt = `You are Aria, a warm and insightful matchmaker at SoulSync. Write a deeply personal report for ${user_name} based on their journey with you.
 
-        personalityProfile: `**Your Personality Blueprint**
+USER PROFILE:
+- Name: ${user_name}
+- Age: ${age || 'Not specified'}
+- Gender: ${user_gender}
 
-${personalityDescription}
+PERSONALITY INSIGHTS:
+- Love Languages: ${JSON.stringify(userData.love_languages || personalityData["Love Language"] || personalityData.love_languages || [])}
+- Attachment Style: ${userData.attachment_style || personalityData["Attachment Style"] || personalityData.attachment_style || 'developing'}
+- Values: ${JSON.stringify(userData.values || personalityData["Values"] || personalityData["Core Values"] || personalityData.values || [])}
+- Interests: ${JSON.stringify(userData.interests || personalityData["Interests/Hobbies"] || personalityData["Interests / Hobbies"] || personalityData.interests || [])}
 
-You show up in the world with a unique blend of traits that make you who you are. What makes you special is your authentic approach to relationships and life.`,
+BIG FIVE TRAITS:
+${this.formatBigFive(userData.big_five || personalityData["Big Five personality traits"] || personalityData.big_five)}
 
-        loveStyle: `**How You Love & Need to Be Loved**
+COUPLE COMPASS RESPONSES:
+- Living: ${coupleCompassData.living_arrangement || 'Not answered'}
+- Finances: ${coupleCompassData.financial_style || 'Not answered'}
+- Children: ${coupleCompassData.children_vision || 'Not answered'}
+- Conflict: ${coupleCompassData.conflict_style || 'Not answered'}
+- Career: ${coupleCompassData.ambition_balance || 'Not answered'}
+- Differences: ${coupleCompassData.big_mismatch || 'Not answered'}
 
-Your primary love language appears to be ${this.formatLoveLanguage(loveLanguage)}. This means you feel most cherished when someone expresses love in this way.
+Create a personal report with these EXACT section keys in JSON format:
+{
+  "title": "${user_name}'s Story",
+  "sections": {
+    "introduction": "Write a warm, personal greeting that references specific things they shared. Make them feel seen and understood.",
+    "personalityProfile": "Describe their unique personality blend. Reference their traits naturally.",
+    "loveStyle": "Explain how they give and receive love based on their love languages and attachment style.",
+    "relationshipStrengths": "Highlight what makes them an amazing partner. Be specific and affirming.",
+    "growthAreas": "Frame growth opportunities positively. Focus on potential, not problems.",
+    "idealPartner": "Describe who would complement them perfectly based on all their data.",
+    "closing": "End with encouragement and belief in their journey. Sign as 'Aria 💕'"
+  },
+  "generatedAt": "${new Date().toISOString()}"
+}
 
-Your attachment style leans ${attachment}, which shapes how you connect with others. ${this.getAttachmentDescription(attachment)}`,
+Write each section as 2-3 warm paragraphs. Reference their specific traits and preferences. Make it personal, not generic.`;
 
-        relationshipStrengths: `**Your Relationship Superpowers**
+      const completion = await assistantService.openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [{ role: 'system', content: reportPrompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.8,
+        max_tokens: 2000
+      });
 
-${this.generateStrengths(personalityData, bigFive)}
+      const report = JSON.parse(completion.choices[0].message.content);
 
-Your openness and authenticity are your greatest strengths. You know yourself well and aren't afraid to be genuine.`,
+      // Ensure proper structure
+      if (!report.title || !report.sections) {
+        throw new Error('Invalid report structure from GPT');
+      }
 
-        growthAreas: `**Your Growth Edges**
+      return report;
 
-We all have areas where love challenges us to grow. ${this.generateGrowthAreas(bigFive, attachment)}`,
-
-        idealPartner: `**Who You Need By Your Side**
-
-Based on everything you've shared, your ideal partner is someone who ${this.generateIdealPartner(personalityData, coupleCompassData, bigFive)}.`,
-
-        closing: `${user_name}, you are ready for the kind of love that sees you, celebrates you, and grows with you.
-
-Remember: The right person won't complete you - they'll complement the complete person you already are.
-
-With love and belief in your journey,
-Aria 💕`
-      },
-      generatedAt: new Date().toISOString()
-    };
+    } catch (error) {
+      console.error('GPT report generation failed:', error);
+      // Return basic fallback structure
+      return {
+        title: `${userData.user_name}'s Story`,
+        sections: {
+          introduction: `Dear ${userData.user_name}, thank you for sharing your journey with me.`,
+          personalityProfile: 'Unable to generate personalized content at this time.',
+          loveStyle: 'Your love style is unique and valuable.',
+          relationshipStrengths: 'You have many strengths to offer in a relationship.',
+          growthAreas: 'We all have areas where we can grow.',
+          idealPartner: 'Your ideal partner is out there.',
+          closing: 'Keep believing in love. - Aria 💕'
+        },
+        generatedAt: new Date().toISOString()
+      };
+    }
   }
 
-  generatePersonalityDescription(bigFive) {
-    let description = [];
-    
-    if (bigFive.openness > 0.7) {
-      description.push("You're a creative soul who loves exploring new ideas and experiences");
-    } else if (bigFive.openness < 0.3) {
-      description.push("You appreciate tradition and find comfort in the familiar");
+  formatBigFive(bigFive) {
+    if (!bigFive || Object.keys(bigFive).length === 0) {
+      return 'No Big Five data available';
     }
-    
-    if (bigFive.conscientiousness > 0.7) {
-      description.push("Your organized and reliable nature makes others feel secure");
-    }
-    
-    if (bigFive.extraversion > 0.6) {
-      description.push("Your social energy lights up any room you enter");
-    } else if (bigFive.extraversion < 0.4) {
-      description.push("You have a quiet strength and prefer deep connections over large gatherings");
-    }
-    
-    if (bigFive.agreeableness > 0.7) {
-      description.push("Your compassionate heart naturally draws people to you");
-    }
-    
-    if (bigFive.neuroticism < 0.3) {
-      description.push("You have an admirable emotional stability that helps you weather life's storms");
-    }
-    
-    return description.join(". ") || "You have a balanced personality that adapts well to different situations.";
+
+    return Object.entries(bigFive)
+      .map(([trait, score]) => `- ${trait}: ${score} (${this.getTraitDescription(trait, score)})`)
+      .join('\n');
   }
 
-  formatLoveLanguage(language) {
-    const formats = {
-      'words_of_affirmation': 'words of affirmation - hearing "I love you" and receiving compliments',
-      'quality_time': 'quality time - undivided attention and meaningful conversations',
-      'acts_of_service': 'acts of service - when someone does thoughtful things to help you',
-      'physical_touch': 'physical touch - hugs, holding hands, and physical closeness',
-      'gifts': 'receiving gifts - thoughtful presents that show someone was thinking of you'
-    };
-    return formats[language] || language;
-  }
-
-  getAttachmentDescription(style) {
-    const descriptions = {
-      'secure': 'This means you are comfortable with intimacy and independence in healthy balance.',
-      'anxious': 'This means you deeply value closeness and may need extra reassurance in relationships.',
-      'avoidant': 'This means you value your independence and may take time to open up fully.',
-      'disorganized': 'This means you may have complex feelings about closeness and distance.',
-      'developing': 'This is still developing as we learn more about your relationship patterns.'
-    };
-    return descriptions[style] || '';
-  }
-
-  generateStrengths(personalityData, bigFive) {
-    const strengths = [];
-    
-    if (bigFive.agreeableness > 0.6) {
-      strengths.push("Your empathy allows you to truly understand your partner's feelings");
-    }
-    
-    if (bigFive.conscientiousness > 0.6) {
-      strengths.push("You're someone a partner can count on - reliable and true to your word");
-    }
-    
-    if (personalityData.values?.includes('honesty')) {
-      strengths.push("Your commitment to honesty creates a foundation of trust");
-    }
-    
-    return strengths.join(".\n\n") || "Your unique combination of traits creates a strong foundation for lasting love.";
-  }
-
-  generateGrowthAreas(bigFive, attachment) {
-    if (attachment === 'anxious') {
-      return "Your journey is about trusting in love's permanence and giving your partner space to miss you.";
-    }
-    
-    if (attachment === 'avoidant') {
-      return "Your journey is about allowing yourself to be vulnerable and letting someone truly see you.";
-    }
-    
-    if (bigFive.neuroticism > 0.7) {
-      return "Your journey is about finding inner calm and not letting worry overshadow love's joy.";
-    }
-    
-    return "Your journey is about continuing to be open while maintaining healthy boundaries.";
-  }
-
-  generateIdealPartner(personalityData, coupleCompassData, bigFive) {
-    const traits = [];
-    
-    if (personalityData.love_language === 'quality_time') {
-      traits.push("prioritizes spending meaningful time with you");
-    }
-    
-    if (coupleCompassData.conflict_style === 'talk_out') {
-      traits.push("communicates openly when challenges arise");
-    }
-    
-    if (bigFive.extraversion < 0.4) {
-      traits.push("respects your need for quiet moments");
-    }
-    
-    if (personalityData.values?.includes('family')) {
-      traits.push("shares your vision of family");
-    }
-    
-    return traits.join(", ") || "appreciates your authenticity and shares your core values";
+  getTraitDescription(trait, score) {
+    if (score > 0.7) return 'High';
+    if (score < 0.3) return 'Low';
+    return 'Moderate';
   }
 }
 
