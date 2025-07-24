@@ -536,10 +536,8 @@ async function extractInsightsFromAssistant(userId) {
     const extractionPrompt = `You are analyzing a conversation between Aria (a relationship assistant) and a user. Extract personality insights.
 
 CRITICAL REQUIREMENTS:
-1. Return ONLY valid JSON - no explanation or text outside the JSON
-2. Only include a key if data is clearly mentioned. If not mentioned, omit the key completely
-3. Use snake_case for ALL keys and string values
-4. Include ALL mentioned items - don't pick just one
+1. Use snake_case for ALL keys and string values
+2. Include ALL mentioned items - don't pick just one
 
 Required format:
 {
