@@ -533,47 +533,34 @@ async function extractInsightsFromAssistant(userId) {
     
     // Extract insights using GPT-4 with validation and retries
     // Enhanced extraction prompt with strict format requirements
-    const extractionPrompt = `You are analyzing a conversation between Aria (a relationship assistant) and a user. Extract personality insights.
+    const extractionPrompt = `You are analyzing a conversation between Aria (a relationship assistant) and a user. Extract personality insights and return as JSON.
 
-CRITICAL REQUIREMENTS:
-1. Use snake_case for ALL keys and string values
-2. Include ALL mentioned items - don't pick just one
-
-Required format:
+Return a JSON object with these exact keys (use snake_case):
 {
-  "love_languages": ["array_of_all_mentioned"],
-  "attachment_style": "single_value",
-  "big_five": {
-    "openness": 0.0 to 1.0,
-    "conscientiousness": 0.0 to 1.0,
-    "extraversion": 0.0 to 1.0,
-    "agreeableness": 0.0 to 1.0,
-    "neuroticism": 0.0 to 1.0
-  },
-  "values": ["array_of_values"],
-  "interests": ["array_of_interests"]
+  "love_languages": [],      // array of all mentioned: words_of_affirmation, quality_time, acts_of_service, physical_touch, gifts
+  "attachment_style": "",     // one of: secure, anxious, avoidant, disorganized
+  "big_five": {},            // include only traits you can reasonably assess (0.0-1.0)
+  "values": [],              // what they find important
+  "interests": []            // activities/hobbies mentioned
 }
 
-RULES:
-- Valid love_languages: words_of_affirmation, quality_time, acts_of_service, physical_touch, gifts
-- Valid attachment_style: secure, anxious, avoidant, disorganized
-- For big_five: Include ALL 5 traits or omit the entire object
-- Use snake_case for values too (e.g., "personal_growth" not "personal growth")
-- If user says "acts of service and quality time", return ["acts_of_service", "quality_time"]
+IMPORTANT:
+- Extract what you observe or can reasonably infer from behavior patterns
+- Include ALL love languages if multiple are mentioned
+- For big_five: Include only traits with sufficient evidence, omit others
+- Attachment style can be inferred from relationship patterns
+- Return ONLY the JSON object, no additional text
 
-Example valid output:
+Example JSON output:
 {
-  "love_languages": ["quality_time", "acts_of_service"],
-  "attachment_style": "secure",
+  "love_languages": ["quality_time", "gifts"],
+  "attachment_style": "avoidant",
   "big_five": {
     "openness": 0.7,
-    "conscientiousness": 0.5,
-    "extraversion": 0.8,
-    "agreeableness": 0.9,
-    "neuroticism": 0.3
+    "agreeableness": 0.8
   },
-  "values": ["family", "growth", "honesty"],
-  "interests": ["cooking", "hiking", "reading"]
+  "values": ["loyalty", "adventure"],
+  "interests": ["gym", "cooking", "travel"]
 }`;
 
     // Extraction with validation and retry
@@ -793,11 +780,12 @@ async function shouldExtractInsights(userId) {
     const messagesSinceExtraction = message_count - (last_extraction_message_count || 0);
     const conversationDuration = Date.now() - new Date(created_at).getTime();
 
-    // Extract after 15 messages OR 15 minutes
-    const shouldExtract = messagesSinceExtraction >= 15 || conversationDuration > 15 * 60 * 1000;
+    // First extraction at 15 messages, then every 10 messages
+    const shouldExtract = (message_count >= 15 && messagesSinceExtraction >= 10) ||
+                         (message_count === 15 && last_extraction_message_count === 0);
 
     if (shouldExtract) {
-      console.log(`Extraction triggered for ${userId}: ${messagesSinceExtraction} messages, ${Math.round(conversationDuration/60000)} minutes`);
+      console.log(`Extraction triggered for ${userId}: ${message_count} total messages, ${messagesSinceExtraction} since last extraction`);
     }
 
     return shouldExtract;
