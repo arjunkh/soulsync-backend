@@ -745,6 +745,19 @@ Example valid output:
       );
       
       console.log(`✅ Extracted insights for user ${userId}:`, insights);
+
+      // Check if report can be generated after extraction
+      setTimeout(async () => {
+        try {
+          const reportGenerated = await checkReportReadiness(userId);
+          if (reportGenerated) {
+            console.log(`🎉 Report auto-generated after extraction for user ${userId}`);
+          }
+        } catch (error) {
+          console.error('Error checking report after extraction:', error);
+        }
+      }, 2000); // Small delay to ensure all data is saved
+
       return insights;
     }
     
@@ -847,32 +860,69 @@ async function checkReportReadiness(userId) {
     const personalityData = userData.personality_data || {};
     const coupleCompassData = userData.couple_compass_data || {};
 
-    // Check minimum requirements
-    const hasLoveLanguage = personalityData.love_language ||
-                           (personalityData.love_language_hints?.length > 0);
-    const hasValues = personalityData.values ||
-                     (personalityData.values_discovered?.length > 0);
-    const hasCompass = personalityData.couple_compass_complete ||
-                      Object.keys(coupleCompassData).length >= 6;
+    // Check if report already generated
+    if (userData.report_generated) {
+      console.log(`Report already generated for user ${userId}`);
+      return false;
+    }
+
+    // Check minimum requirements - look in BOTH root fields and personality_data
+    const hasLoveLanguage =
+      (userData.love_languages && userData.love_languages.length > 0) ||
+      personalityData["Love Language"] ||
+      personalityData.love_language ||
+      personalityData.love_languages?.length > 0 ||
+      personalityData.love_language_hints?.length > 0;
+
+    const hasValues =
+      (userData.values && userData.values.length > 0) ||
+      personalityData["Values"]?.length > 0 ||
+      personalityData["Core Values"]?.length > 0 ||
+      personalityData.values?.length > 0 ||
+      personalityData.values_discovered?.length > 0;
+
+    const hasCompass =
+      personalityData.couple_compass_complete ||
+      Object.keys(coupleCompassData).length >= 6;
+
+    console.log(`Report readiness check for ${userId}:`, {
+      hasLoveLanguage,
+      hasValues,
+      hasCompass,
+      ready: hasLoveLanguage && hasValues && hasCompass
+    });
 
     if (hasLoveLanguage && hasValues && hasCompass) {
-      // Generate report
+      const reportData = {
+        ...userData,
+        personality_data: {
+          ...personalityData,
+          love_language: userData.love_languages?.[0] || personalityData["Love Language"] || personalityData.love_language,
+          attachment_style: userData.attachment_style || personalityData["Attachment Style"] || personalityData.attachment_style,
+          big_five: userData.big_five || personalityData["Big Five personality traits"] || personalityData.big_five || {},
+          values: userData.values || personalityData["Values"] || personalityData["Core Values"] || personalityData.values || [],
+          interests: userData.interests || personalityData["Interests/Hobbies"] || personalityData["Interests / Hobbies"] || personalityData.interests || []
+        }
+      };
+
       const report = reportGenerator.generateReport(
         userData,
-        personalityData,
+        reportData.personality_data,
         coupleCompassData
       );
 
       await savePersonalReport(userId, report);
 
-      // Mark report as generated
       await pool.query(
         'UPDATE users SET report_generated = TRUE WHERE user_id = $1',
         [userId]
       );
 
+      console.log(`✅ Report generated successfully for user ${userId}`);
       return true;
     }
+
+    console.log(`Report not ready for user ${userId} - missing required data`);
     return false;
   } catch (error) {
     console.error('Error checking report readiness:', error);
@@ -2047,6 +2097,18 @@ app.post('/api/chat', async (req, res) => {
             WHERE user_id = $1
           `, [userId]);
 
+          // Check if report can be generated after Couple Compass completion
+          setTimeout(async () => {
+            try {
+              const reportGenerated = await checkReportReadiness(userId);
+              if (reportGenerated) {
+                console.log(`🎉 Report auto-generated after Couple Compass for user ${userId}`);
+              }
+            } catch (error) {
+              console.error('Error checking report after Couple Compass:', error);
+            }
+          }, 2000); // Small delay to ensure all data is saved
+
           // Send completion info to Assistant thread
           try {
             const threadId = await assistantService.getOrCreateThread(userId);
@@ -2460,6 +2522,65 @@ app.get('/api/user-insights/:userId', async (req, res) => {
   } catch (error) {
     console.error('Error getting user insights:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Manual report generation endpoint - for users who should have reports but don't
+app.post('/api/generate-report/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user exists
+    const user = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+    if (user.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if report already exists
+    if (user.rows[0].report_generated) {
+      return res.json({
+        success: false,
+        message: 'Report already generated',
+        reportAvailable: true
+      });
+    }
+
+    // Try to generate report
+    const reportGenerated = await checkReportReadiness(userId);
+
+    if (reportGenerated) {
+      res.json({
+        success: true,
+        message: 'Report generated successfully',
+        reportAvailable: true
+      });
+    } else {
+      // Provide detailed reason why report can't be generated
+      const userData = user.rows[0];
+      const personalityData = userData.personality_data || {};
+      const coupleCompassData = userData.couple_compass_data || {};
+
+      const missingItems = [];
+      if (!userData.love_languages?.length && !personalityData["Love Language"]) {
+        missingItems.push('Love Language data');
+      }
+      if (!userData.values?.length && !personalityData["Values"]?.length) {
+        missingItems.push('Values data');
+      }
+      if (!personalityData.couple_compass_complete && Object.keys(coupleCompassData).length < 6) {
+        missingItems.push('Couple Compass completion');
+      }
+
+      res.json({
+        success: false,
+        message: 'Insufficient data for report generation',
+        missing: missingItems,
+        reportAvailable: false
+      });
+    }
+  } catch (error) {
+    console.error('Manual report generation error:', error);
+    res.status(500).json({ error: 'Failed to generate report' });
   }
 });
 
