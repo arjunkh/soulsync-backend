@@ -587,12 +587,7 @@ Example JSON output:
           (!rawInsights.values || Array.isArray(rawInsights.values)) &&
           (!rawInsights.interests || Array.isArray(rawInsights.interests)) &&
           (!rawInsights.attachment_style || typeof rawInsights.attachment_style === 'string') &&
-          (!rawInsights.big_five || (typeof rawInsights.big_five === 'object' &&
-            rawInsights.big_five.openness !== undefined &&
-            rawInsights.big_five.conscientiousness !== undefined &&
-            rawInsights.big_five.extraversion !== undefined &&
-            rawInsights.big_five.agreeableness !== undefined &&
-            rawInsights.big_five.neuroticism !== undefined));
+          (!rawInsights.big_five || typeof rawInsights.big_five === 'object');
 
         if (isValid) {
           insights = rawInsights;
@@ -601,10 +596,6 @@ Example JSON output:
           break;
         } else {
           console.error(`❌ Invalid structure on attempt ${attempt + 1}`, rawInsights);
-          if (attempt < 2) {
-            // Add clearer instructions for retry
-            extractionPrompt += "\n\nREMINDER: Arrays must be arrays [], not objects. Use exact key names shown above. Big Five must have ALL 5 traits.";
-          }
         }
       } catch (error) {
         console.error(`❌ Extraction attempt ${attempt + 1} failed:`, error);
